@@ -7,14 +7,8 @@ import ImageIO
 
 struct Config {
     static var packPath = ""
-    static var catFolder = "Cat 1"
-    static var catVariant = "Cat 1"
     static let scale: CGFloat = 6.0
     static var windowSize: CGFloat { 16.0 * scale }
-
-    static var currentCatPath: String {
-        "\(packPath)/\(catFolder)/\(catVariant)"
-    }
 }
 
 // ============================================================================
@@ -69,7 +63,6 @@ func loadGIF(_ path: String) -> Animation {
     for i in 0..<n {
         guard let cg = CGImageSourceCreateImageAtIndex(src, i, nil) else { continue }
 
-        // Read frame delay
         var delay: TimeInterval = 0.1
         if let p = CGImageSourceCopyPropertiesAtIndex(src, i, nil) as? [String: Any],
            let g = p[kCGImagePropertyGIFDictionary as String] as? [String: Any] {
@@ -79,7 +72,6 @@ func loadGIF(_ path: String) -> Animation {
         }
         if delay < 0.02 { delay = 0.1 }
 
-        // Scale up with nearest-neighbor for pixel-perfect look
         let w = Int(CGFloat(cg.width) * scale)
         let h = Int(CGFloat(cg.height) * scale)
         guard let ctx = CGContext(
@@ -108,18 +100,23 @@ enum PetState {
     case meowing, yawning, washing, scratching
 }
 
+struct Movement {
+    var dx: CGFloat = 0
+    var breathOffset: CGFloat = 0
+}
+
 class PetBrain {
     var state: PetState = .sitIdle
     var stateTime: TimeInterval = 0
     var stateDuration: TimeInterval = 4
     var facingRight = true
     let walkSpeed: CGFloat = 30
+    var transitionDelay: TimeInterval = 0
 
     var anims: [String: Animation] = [:]
     var currentAnim: Animation?
 
-    func loadAnims() {
-        let base = Config.currentCatPath
+    func loadAnims(catPath: String) {
         let map: [(String, String)] = [
             ("walk_r",    "walk_right.gif"),
             ("walk_l",    "walk_left.gif"),
@@ -133,7 +130,7 @@ class PetBrain {
         ]
         anims.removeAll()
         for (key, file) in map {
-            let path = "\(base)/\(file)"
+            let path = "\(catPath)/\(file)"
             if FileManager.default.fileExists(atPath: path) {
                 anims[key] = loadGIF(path)
             }
@@ -143,11 +140,12 @@ class PetBrain {
     func enter(_ s: PetState) {
         state = s
         stateTime = 0
+        transitionDelay = 0.15
 
         switch s {
         case .sitIdle:
-            stateDuration = .random(in: 2...6)
-            currentAnim = anims["meow"]   // use first frame as idle pose
+            stateDuration = .random(in: 3...7)
+            currentAnim = anims["meow"] ?? anims.values.first
         case .walkRight:
             facingRight = true
             stateDuration = .random(in: 3...7)
@@ -175,24 +173,31 @@ class PetBrain {
         }
     }
 
-    /// Returns horizontal movement delta
-    func update(dt: TimeInterval) -> CGFloat {
+    func update(dt: TimeInterval) -> Movement {
         stateTime += dt
-        if case .sitIdle = state {
-            // static idle — don't animate
+        var move = Movement()
+
+        if transitionDelay > 0 {
+            transitionDelay -= dt
+        } else if case .sitIdle = state {
+            // static idle — no frame advance
         } else {
             currentAnim?.advance(by: dt)
         }
 
-        var dx: CGFloat = 0
+        // Subtle breathing bob while idle
+        if case .sitIdle = state {
+            move.breathOffset = sin(stateTime * 2.0) * 1.5
+        }
+
         switch state {
         case .sitIdle:
             if stateTime >= stateDuration { pickNext() }
         case .walkRight:
-            dx = walkSpeed * CGFloat(dt)
+            if transitionDelay <= 0 { move.dx = walkSpeed * CGFloat(dt) }
             if stateTime >= stateDuration { enter(.sitIdle) }
         case .walkLeft:
-            dx = -walkSpeed * CGFloat(dt)
+            if transitionDelay <= 0 { move.dx = -walkSpeed * CGFloat(dt) }
             if stateTime >= stateDuration { enter(.sitIdle) }
         case .sleeping:
             if stateTime >= stateDuration {
@@ -201,7 +206,7 @@ class PetBrain {
         case .meowing, .yawning, .washing, .scratching:
             if currentAnim?.completedOnce == true { enter(.sitIdle) }
         }
-        return dx
+        return move
     }
 
     var image: NSImage? {
@@ -229,13 +234,17 @@ class PetBrain {
 
 class PetView: NSView {
     var petImage: NSImage?
+    var breathOffset: CGFloat = 0
     var isDragging = false
+    weak var instance: PetInstance?
     private var dragOffset = NSPoint.zero
 
     override func draw(_ dirtyRect: NSRect) {
         guard let img = petImage else { return }
         NSGraphicsContext.current?.imageInterpolation = .none
-        img.draw(in: bounds)
+        var r = bounds
+        r.origin.y += breathOffset
+        img.draw(in: r)
     }
 
     override var acceptsFirstResponder: Bool { true }
@@ -249,61 +258,43 @@ class PetView: NSView {
             y: sLoc.y - window!.frame.origin.y
         )
     }
+
     override func mouseDragged(with e: NSEvent) {
         guard isDragging, let w = window else { return }
         let s = NSEvent.mouseLocation
         w.setFrameOrigin(NSPoint(x: s.x - dragOffset.x, y: s.y - dragOffset.y))
     }
+
     override func mouseUp(with e: NSEvent) { isDragging = false }
 
     override func rightMouseDown(with e: NSEvent) {
-        (NSApp.delegate as? AppDelegate)?.showMenu(e)
+        guard let inst = instance else { return }
+        (NSApp.delegate as? AppDelegate)?.showPetMenu(for: inst, event: e)
     }
 }
 
 // ============================================================================
-// MARK: - App Delegate
+// MARK: - Pet Instance
 // ============================================================================
 
-class AppDelegate: NSObject, NSApplicationDelegate {
-    var window: NSWindow!
-    var view: PetView!
-    var brain: PetBrain!
-    var timer: Timer!
-    var lastTick: TimeInterval = 0
-    var screenBounds: NSRect = .zero
+class PetInstance {
+    let window: NSWindow
+    let view: PetView
+    let brain: PetBrain
+    var catFolder: String
+    var catVariant: String
+    var lastTick: TimeInterval
 
-    func applicationDidFinishLaunching(_ n: Notification) {
-        NSApp.setActivationPolicy(.accessory)
+    var catPath: String { "\(Config.packPath)/\(catFolder)/\(catVariant)" }
 
-        guard let screen = NSScreen.main else {
-            print("No screen found")
-            NSApp.terminate(nil)
-            return
-        }
-        screenBounds = screen.visibleFrame
+    init(catFolder: String, catVariant: String, startX: CGFloat, bottomY: CGFloat) {
+        self.catFolder = catFolder
+        self.catVariant = catVariant
+        self.lastTick = ProcessInfo.processInfo.systemUptime
 
-        brain = PetBrain()
-        brain.loadAnims()
-
-        if brain.anims.isEmpty {
-            print("No animations found at: \(Config.currentCatPath)")
-            print("Make sure 'Kittens pack' is in the same directory or pass the path as argument.")
-            NSApp.terminate(nil)
-            return
-        }
-
-        brain.enter(.sitIdle)
-
-        // Window
         let sz = Config.windowSize
-        let frame = NSRect(
-            x: screenBounds.midX - sz/2,
-            y: screenBounds.minY,
-            width: sz, height: sz
-        )
         window = NSWindow(
-            contentRect: frame,
+            contentRect: NSRect(x: startX, y: bottomY, width: sz, height: sz),
             styleMask: .borderless,
             backing: .buffered,
             defer: false
@@ -316,9 +307,86 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         view = PetView(frame: NSRect(x: 0, y: 0, width: sz, height: sz))
         window.contentView = view
-        window.makeKeyAndOrderFront(nil)
 
-        lastTick = ProcessInfo.processInfo.systemUptime
+        brain = PetBrain()
+        brain.loadAnims(catPath: catPath)
+        brain.enter(.sitIdle)
+
+        view.instance = self
+        window.makeKeyAndOrderFront(nil)
+    }
+
+    func tick(screenBounds: NSRect) {
+        let now = ProcessInfo.processInfo.systemUptime
+        let dt = now - lastTick
+        lastTick = now
+
+        let move = brain.update(dt: dt)
+
+        if !view.isDragging {
+            var origin = window.frame.origin
+
+            // Gravity: drift back to screen bottom after drag
+            let bottomY = screenBounds.minY
+            if origin.y > bottomY + 2 {
+                origin.y = max(bottomY, origin.y - 80 * CGFloat(dt))
+            }
+
+            // Horizontal movement
+            origin.x += move.dx
+            let minX = screenBounds.minX
+            let maxX = screenBounds.maxX - Config.windowSize
+            if origin.x <= minX { origin.x = minX; brain.enter(.walkRight) }
+            else if origin.x >= maxX { origin.x = maxX; brain.enter(.walkLeft) }
+
+            window.setFrameOrigin(origin)
+        }
+
+        view.breathOffset = move.breathOffset
+        view.petImage = brain.image
+        view.needsDisplay = true
+    }
+
+    func changeCat(folder: String, variant: String) {
+        catFolder = folder
+        catVariant = variant
+        brain.loadAnims(catPath: catPath)
+        brain.enter(.sitIdle)
+    }
+
+    func close() {
+        window.orderOut(nil)
+    }
+}
+
+// ============================================================================
+// MARK: - App Delegate
+// ============================================================================
+
+class AppDelegate: NSObject, NSApplicationDelegate {
+    var pets: [PetInstance] = []
+    var timer: Timer!
+    var screenBounds: NSRect = .zero
+    var statusItem: NSStatusItem!
+    var menuTargetPet: PetInstance?
+
+    func applicationDidFinishLaunching(_ n: Notification) {
+        NSApp.setActivationPolicy(.accessory)
+
+        guard let screen = NSScreen.main else {
+            print("No screen found"); NSApp.terminate(nil); return
+        }
+        screenBounds = screen.visibleFrame
+
+        addPet(catFolder: "Cat 1", catVariant: "Cat 1")
+
+        if pets.isEmpty {
+            print("No animations found. Check 'Kittens pack' path.")
+            NSApp.terminate(nil); return
+        }
+
+        setupStatusBar()
+
         timer = Timer.scheduledTimer(withTimeInterval: 1.0/30.0, repeats: true) { [weak self] _ in
             self?.tick()
         }
@@ -326,95 +394,178 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func tick() {
-        let now = ProcessInfo.processInfo.systemUptime
-        let dt = now - lastTick
-        lastTick = now
-
-        let dx = brain.update(dt: dt)
-
-        if dx != 0 && !view.isDragging {
-            var o = window.frame.origin
-            o.x += dx
-            let minX = screenBounds.minX
-            let maxX = screenBounds.maxX - Config.windowSize
-            if o.x <= minX { o.x = minX; brain.enter(.walkRight) }
-            else if o.x >= maxX { o.x = maxX; brain.enter(.walkLeft) }
-            window.setFrameOrigin(o)
-        }
-
-        view.petImage = brain.image
-        view.needsDisplay = true
+        if let screen = NSScreen.main { screenBounds = screen.visibleFrame }
+        for pet in pets { pet.tick(screenBounds: screenBounds) }
     }
 
-    // MARK: Context Menu
+    // MARK: - Status Bar
 
-    func showMenu(_ event: NSEvent) {
+    func setupStatusBar() {
+        statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+        statusItem.button?.title = "🐱"
+        let menu = NSMenu()
+        menu.delegate = self
+        statusItem.menu = menu
+    }
+
+    func rebuildStatusMenu() {
+        guard let menu = statusItem.menu else { return }
+        menu.removeAllItems()
+
+        let addItem = NSMenuItem(title: "Add Cat", action: #selector(addRandomPet), keyEquivalent: "n")
+        addItem.target = self
+        menu.addItem(addItem)
+
+        if pets.count > 1 {
+            let rmItem = NSMenuItem(title: "Remove Last Cat", action: #selector(removeLastPet), keyEquivalent: "")
+            rmItem.target = self
+            menu.addItem(rmItem)
+        }
+
+        menu.addItem(.separator())
+
+        for (i, pet) in pets.enumerated() {
+            let title = "Cat #\(i + 1): \(pet.catVariant)"
+            let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+            let sub = NSMenu()
+            for c in 1...13 {
+                let ci = NSMenuItem(title: "Cat \(c)", action: #selector(statusChangeCat(_:)), keyEquivalent: "")
+                ci.tag = i * 100 + c
+                ci.target = self
+                if pet.catFolder == "Cat \(c)" { ci.state = .on }
+                sub.addItem(ci)
+            }
+            item.submenu = sub
+            menu.addItem(item)
+        }
+
+        menu.addItem(.separator())
+        menu.addItem(NSMenuItem(title: "Quit", action: #selector(NSApp.terminate(_:)), keyEquivalent: "q"))
+    }
+
+    @objc func addRandomPet() {
+        let catNum = Int.random(in: 1...13)
+        let folder = "Cat \(catNum)"
+        addPet(catFolder: folder, catVariant: findFirstVariant(folder: folder))
+    }
+
+    @objc func removeLastPet() {
+        guard pets.count > 1 else { return }
+        pets.removeLast().close()
+    }
+
+    @objc func statusChangeCat(_ sender: NSMenuItem) {
+        let petIdx = sender.tag / 100
+        let catNum = sender.tag % 100
+        guard petIdx < pets.count else { return }
+        let folder = "Cat \(catNum)"
+        pets[petIdx].changeCat(folder: folder, variant: findFirstVariant(folder: folder))
+    }
+
+    // MARK: - Per-Pet Context Menu
+
+    func showPetMenu(for pet: PetInstance, event: NSEvent) {
+        menuTargetPet = pet
         let menu = NSMenu()
 
-        // Cat selection
-        let catMenu = NSMenu()
+        // Choose Cat
+        let catSub = NSMenu()
         for i in 1...13 {
-            let item = NSMenuItem(title: "Cat \(i)", action: #selector(pickCat(_:)), keyEquivalent: "")
+            let item = NSMenuItem(title: "Cat \(i)", action: #selector(ctxPickCat(_:)), keyEquivalent: "")
             item.tag = i
             item.target = self
-            if Config.catFolder == "Cat \(i)" { item.state = .on }
-            catMenu.addItem(item)
+            if pet.catFolder == "Cat \(i)" { item.state = .on }
+            catSub.addItem(item)
         }
         let catItem = NSMenuItem(title: "Choose Cat", action: nil, keyEquivalent: "")
-        catItem.submenu = catMenu
+        catItem.submenu = catSub
         menu.addItem(catItem)
 
-        // Variant selection
-        let varMenu = NSMenu()
-        let catDir = "\(Config.packPath)/\(Config.catFolder)"
-        if let items = try? FileManager.default.contentsOfDirectory(atPath: catDir) {
-            let variants = items.filter { item in
+        // Color Variant
+        let catDir = "\(Config.packPath)/\(pet.catFolder)"
+        if let contents = try? FileManager.default.contentsOfDirectory(atPath: catDir) {
+            let variants = contents.filter { name in
                 var isDir: ObjCBool = false
-                FileManager.default.fileExists(atPath: "\(catDir)/\(item)", isDirectory: &isDir)
+                FileManager.default.fileExists(atPath: "\(catDir)/\(name)", isDirectory: &isDir)
                 return isDir.boolValue
             }.sorted()
-            for v in variants {
-                let mi = NSMenuItem(title: v, action: #selector(pickVariant(_:)), keyEquivalent: "")
-                mi.representedObject = v
-                mi.target = self
-                if v == Config.catVariant { mi.state = .on }
-                varMenu.addItem(mi)
+            if variants.count > 1 {
+                let varSub = NSMenu()
+                for v in variants {
+                    let item = NSMenuItem(title: v, action: #selector(ctxPickVariant(_:)), keyEquivalent: "")
+                    item.representedObject = v
+                    item.target = self
+                    if v == pet.catVariant { item.state = .on }
+                    varSub.addItem(item)
+                }
+                let varItem = NSMenuItem(title: "Color Variant", action: nil, keyEquivalent: "")
+                varItem.submenu = varSub
+                menu.addItem(varItem)
             }
         }
-        if varMenu.numberOfItems > 0 {
-            let varItem = NSMenuItem(title: "Color Variant", action: nil, keyEquivalent: "")
-            varItem.submenu = varMenu
-            menu.addItem(varItem)
+
+        if pets.count > 1 {
+            menu.addItem(.separator())
+            let rm = NSMenuItem(title: "Remove This Cat", action: #selector(ctxRemovePet), keyEquivalent: "")
+            rm.target = self
+            menu.addItem(rm)
         }
 
         menu.addItem(.separator())
         menu.addItem(NSMenuItem(title: "Quit", action: #selector(NSApp.terminate(_:)), keyEquivalent: "q"))
 
-        NSMenu.popUpContextMenu(menu, with: event, for: view)
+        NSMenu.popUpContextMenu(menu, with: event, for: pet.view)
     }
 
-    @objc func pickCat(_ sender: NSMenuItem) {
-        let num = sender.tag
-        Config.catFolder = "Cat \(num)"
-        // Pick first variant
-        let catDir = "\(Config.packPath)/Cat \(num)"
+    @objc func ctxPickCat(_ sender: NSMenuItem) {
+        guard let pet = menuTargetPet else { return }
+        let folder = "Cat \(sender.tag)"
+        pet.changeCat(folder: folder, variant: findFirstVariant(folder: folder))
+    }
+
+    @objc func ctxPickVariant(_ sender: NSMenuItem) {
+        guard let pet = menuTargetPet, let v = sender.representedObject as? String else { return }
+        pet.changeCat(folder: pet.catFolder, variant: v)
+    }
+
+    @objc func ctxRemovePet() {
+        guard let pet = menuTargetPet, pets.count > 1,
+              let idx = pets.firstIndex(where: { $0 === pet }) else { return }
+        pets.remove(at: idx)
+        pet.close()
+    }
+
+    // MARK: - Pet Management
+
+    func addPet(catFolder: String, catVariant: String) {
+        let startX = screenBounds.minX + CGFloat.random(in: 50...(max(51, screenBounds.width - 150)))
+        let pet = PetInstance(
+            catFolder: catFolder, catVariant: catVariant,
+            startX: startX, bottomY: screenBounds.minY
+        )
+        guard !pet.brain.anims.isEmpty else { pet.close(); return }
+        pets.append(pet)
+    }
+
+    func findFirstVariant(folder: String) -> String {
+        let catDir = "\(Config.packPath)/\(folder)"
         if let items = try? FileManager.default.contentsOfDirectory(atPath: catDir) {
-            let variants = items.filter { item in
+            let dirs = items.filter { name in
                 var isDir: ObjCBool = false
-                FileManager.default.fileExists(atPath: "\(catDir)/\(item)", isDirectory: &isDir)
+                FileManager.default.fileExists(atPath: "\(catDir)/\(name)", isDirectory: &isDir)
                 return isDir.boolValue
             }.sorted()
-            Config.catVariant = variants.first ?? "Cat \(num)"
+            if let first = dirs.first { return first }
         }
-        brain.loadAnims()
-        brain.enter(.sitIdle)
+        return folder
     }
+}
 
-    @objc func pickVariant(_ sender: NSMenuItem) {
-        guard let v = sender.representedObject as? String else { return }
-        Config.catVariant = v
-        brain.loadAnims()
-        brain.enter(.sitIdle)
+// MARK: - NSMenuDelegate
+
+extension AppDelegate: NSMenuDelegate {
+    func menuWillOpen(_ menu: NSMenu) {
+        if menu == statusItem.menu { rebuildStatusMenu() }
     }
 }
 
@@ -422,7 +573,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 // MARK: - Main
 // ============================================================================
 
-// Resolve pack path
 if CommandLine.arguments.count > 1 {
     Config.packPath = CommandLine.arguments[1]
 } else {
@@ -432,9 +582,6 @@ if CommandLine.arguments.count > 1 {
         ? candidate
         : NSHomeDirectory() + "/Downloads/Kittens pack"
 }
-
-if CommandLine.arguments.count > 2 { Config.catFolder = CommandLine.arguments[2] }
-if CommandLine.arguments.count > 3 { Config.catVariant = CommandLine.arguments[3] }
 
 let app = NSApplication.shared
 let delegate = AppDelegate()

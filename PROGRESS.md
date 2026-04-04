@@ -7,12 +7,12 @@
 - [x] `run.sh` auto-detect assets & run
 - [x] Initial commit
 
-## Phase 2: Core UX Improvements
-- [ ] Idle animation (subtle breathing / ear-twitch instead of static frame)
-- [ ] Smooth state transitions (brief pause between states)
-- [ ] Gravity / dock to bottom (cat walks back down after being dragged)
-- [ ] Menu bar icon (NSStatusItem) for settings & quit
-- [ ] Multiple cats on screen simultaneously
+## Phase 2: Core UX Improvements ✅
+- [x] Idle animation (subtle breathing bob via sine wave)
+- [x] Smooth state transitions (0.15s pause before new animation starts)
+- [x] Gravity / dock to bottom (cat drifts back down after being dragged)
+- [x] Menu bar icon (NSStatusItem 🐱) with add/remove/change cat
+- [x] Multiple cats on screen simultaneously (PetInstance refactor)
 
 ## Phase 3: Personality & Interaction
 - [ ] Mouse follow (cat looks toward / walks toward cursor)
