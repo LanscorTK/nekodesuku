@@ -14,12 +14,12 @@
 - [x] Menu bar icon (NSStatusItem 🐱) with add/remove/change cat
 - [x] Multiple cats on screen simultaneously (PetInstance refactor)
 
-## Phase 3: Personality & Interaction
-- [ ] Mouse follow (cat looks toward / walks toward cursor)
-- [ ] Click reactions (left-click triggers meow or hiss)
-- [ ] Edge climbing (walk along screen edges)
-- [ ] Random fun events (chase invisible bug, zoomies)
-- [ ] Petting (hold mouse → purr/wash animation)
+## Phase 3: Personality & Interaction ✅
+- [x] Click reactions (meow_stand 50%, hiss 30%, on_hind_legs 20%)
+- [x] Mouse follow (20% chance, 8-dir walk toward cursor, paw_att on arrival)
+- [x] Petting (hold >1s → wash_lie loop, release → yawn transition)
+- [x] Random events: zoomies, chase bug (walk→paw→eat), stretch (hind_legs→yawn)
+- [ ] Edge climbing (deferred to later phase)
 
 ## Phase 4: App Packaging
 - [ ] `.app` bundle structure

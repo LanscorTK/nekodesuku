@@ -98,10 +98,14 @@ func loadGIF(_ path: String) -> Animation {
 enum PetState {
     case sitIdle, walkRight, walkLeft, sleeping
     case meowing, yawning, washing, scratching
+    case clickReact, petting
+    case followMouse, pawAttack
+    case zoomies, chaseBug, stretch
 }
 
 struct Movement {
     var dx: CGFloat = 0
+    var dy: CGFloat = 0
     var breathOffset: CGFloat = 0
 }
 
@@ -113,21 +117,64 @@ class PetBrain {
     let walkSpeed: CGFloat = 30
     var transitionDelay: TimeInterval = 0
 
+    // Mouse follow
+    var mousePos: NSPoint = .zero
+    var petPos: NSPoint = .zero
+    var followDirTime: TimeInterval = 0
+    var followDir: String = "right"
+
+    // Compound event tracking
+    var eventPhase: Int = 0
+    var eventCounter: Int = 0
+    var eventTarget: NSPoint = .zero
+    var eventMaxFlips: Int = 0
+
     var anims: [String: Animation] = [:]
     var currentAnim: Animation?
 
+    static let dir8 = ["right", "left", "up", "down",
+                       "right_up", "right_d", "left_up", "left_d"]
+
+    static func direction8(dx: CGFloat, dy: CGFloat) -> String {
+        let deg = atan2(dy, dx) * 180.0 / .pi
+        let nd = deg < 0 ? deg + 360 : deg
+        switch nd {
+        case   0..<22.5:  return "right"
+        case  22.5..<67.5: return "right_up"
+        case  67.5..<112.5: return "up"
+        case 112.5..<157.5: return "left_up"
+        case 157.5..<202.5: return "left"
+        case 202.5..<247.5: return "left_d"
+        case 247.5..<292.5: return "down"
+        case 292.5..<337.5: return "right_d"
+        default:           return "right"
+        }
+    }
+
     func loadAnims(catPath: String) {
-        let map: [(String, String)] = [
-            ("walk_r",    "walk_right.gif"),
-            ("walk_l",    "walk_left.gif"),
-            ("sleep_r",   "sleep1(r).gif"),
-            ("sleep_l",   "sleep1(l).gif"),
-            ("meow",      "meow_sit.gif"),
-            ("yawn",      "yawn_sit.gif"),
-            ("wash",      "wash_sit.gif"),
-            ("scratch_r", "scratch(r).gif"),
-            ("scratch_l", "scratch(l).gif"),
+        var map: [(String, String)] = [
+            ("walk_r",      "walk_right.gif"),
+            ("walk_l",      "walk_left.gif"),
+            ("sleep_r",     "sleep1(r).gif"),
+            ("sleep_l",     "sleep1(l).gif"),
+            ("meow",        "meow_sit.gif"),
+            ("yawn",        "yawn_sit.gif"),
+            ("wash",        "wash_sit.gif"),
+            ("scratch_r",   "scratch(r).gif"),
+            ("scratch_l",   "scratch(l).gif"),
+            ("hiss_r",      "hiss(r).gif"),
+            ("hiss_l",      "hiss(l).gif"),
+            ("meow_stand",  "meow_stand.gif"),
+            ("on_hind_legs","on_hind_legs.gif"),
+            ("wash_lie",    "wash_lie.gif"),
+            ("yawn_stand",  "yawn_stand.gif"),
         ]
+        for dir in PetBrain.dir8 {
+            map.append(("walk_\(dir)",    "walk_\(dir).gif"))
+            map.append(("paw_att_\(dir)", "paw_att_\(dir).gif"))
+            map.append(("eat_\(dir)",     "eat_\(dir).gif"))
+        }
+
         anims.removeAll()
         for (key, file) in map {
             let path = "\(catPath)/\(file)"
@@ -163,15 +210,76 @@ class PetBrain {
         case .scratching:
             stateDuration = 99
             setAnim(facingRight ? "scratch_r" : "scratch_l")
+        case .clickReact, .petting:
+            break // anim set by trigger methods
+        case .followMouse:
+            stateDuration = 5.0
+            followDirTime = 10 // force immediate direction calc
+        case .pawAttack:
+            stateDuration = 99
+            setAnim("paw_att_\(followDir)")
+        case .zoomies:
+            eventPhase = 0; eventCounter = 0
+            eventMaxFlips = Int.random(in: 6...8)
+            facingRight = Bool.random()
+            stateDuration = 99
+            setAnim(facingRight ? "walk_r" : "walk_l")
+        case .chaseBug:
+            eventPhase = 0
+            let ox = CGFloat.random(in: -200...200)
+            let oy = CGFloat.random(in: -100...100)
+            eventTarget = NSPoint(x: petPos.x + ox, y: petPos.y + oy)
+            stateDuration = .random(in: 2...3)
+            let dir = PetBrain.direction8(dx: eventTarget.x - petPos.x,
+                                          dy: eventTarget.y - petPos.y)
+            followDir = dir
+            setAnim("walk_\(dir)")
+        case .stretch:
+            eventPhase = 0
+            stateDuration = 99
+            setAnim("on_hind_legs")
         }
     }
 
     private func setAnim(_ key: String) {
-        if let a = anims[key] ?? anims[key.replacingOccurrences(of: "_l", with: "_r")] {
-            a.reset()
-            currentAnim = a
+        if let a = anims[key] { a.reset(); currentAnim = a; return }
+        let fb = key.replacingOccurrences(of: "_l", with: "_r")
+        if let a = anims[fb] { a.reset(); currentAnim = a; return }
+        // Directional fallbacks
+        if key.hasPrefix("walk_") {
+            if let a = anims["walk_r"] ?? anims["walk_right"] { a.reset(); currentAnim = a; return }
+        }
+        if key.hasPrefix("paw_att_") {
+            for d in PetBrain.dir8 { if let a = anims["paw_att_\(d)"] { a.reset(); currentAnim = a; return } }
+            if let a = anims["scratch_r"] ?? anims["scratch_l"] { a.reset(); currentAnim = a; return }
+        }
+        if key.hasPrefix("eat_") {
+            for d in PetBrain.dir8 { if let a = anims["eat_\(d)"] { a.reset(); currentAnim = a; return } }
+            if let a = anims["meow"] { a.reset(); currentAnim = a; return }
+        }
+        if key == "on_hind_legs" || key == "yawn_stand" {
+            if let a = anims["yawn"] ?? anims["meow"] { a.reset(); currentAnim = a; return }
         }
     }
+
+    // MARK: Click & Petting
+
+    func triggerClickReact() {
+        let r = Double.random(in: 0...1)
+        if r < 0.5 { setAnim("meow_stand") }
+        else if r < 0.8 { setAnim(facingRight ? "hiss_r" : "hiss_l") }
+        else { setAnim("on_hind_legs") }
+        state = .clickReact; stateTime = 0; stateDuration = 99; transitionDelay = 0
+    }
+
+    func triggerPetting() {
+        setAnim("wash_lie")
+        state = .petting; stateTime = 0; stateDuration = 99999; transitionDelay = 0
+    }
+
+    func stopPetting() { enter(.yawning) }
+
+    // MARK: Update
 
     func update(dt: TimeInterval) -> Movement {
         stateTime += dt
@@ -180,12 +288,11 @@ class PetBrain {
         if transitionDelay > 0 {
             transitionDelay -= dt
         } else if case .sitIdle = state {
-            // static idle — no frame advance
+            // no frame advance in idle
         } else {
             currentAnim?.advance(by: dt)
         }
 
-        // Subtle breathing bob while idle
         if case .sitIdle = state {
             move.breathOffset = sin(stateTime * 2.0) * 1.5
         }
@@ -203,8 +310,71 @@ class PetBrain {
             if stateTime >= stateDuration {
                 enter(Double.random(in: 0...1) < 0.4 ? .yawning : .sitIdle)
             }
-        case .meowing, .yawning, .washing, .scratching:
+        case .meowing, .yawning, .washing, .scratching, .clickReact:
             if currentAnim?.completedOnce == true { enter(.sitIdle) }
+        case .petting:
+            break
+        case .followMouse:
+            followDirTime += dt
+            if followDirTime >= 0.5 {
+                followDirTime = 0
+                followDir = PetBrain.direction8(dx: mousePos.x - petPos.x,
+                                                dy: mousePos.y - petPos.y)
+                setAnim("walk_\(followDir)")
+            }
+            let mdx = mousePos.x - petPos.x
+            let mdy = mousePos.y - petPos.y
+            let dist = hypot(mdx, mdy)
+            if dist > 1 {
+                let spd = walkSpeed * CGFloat(dt)
+                move.dx = (mdx / dist) * spd
+                move.dy = (mdy / dist) * spd
+            }
+            if dist < 50 || stateTime >= stateDuration { enter(.pawAttack) }
+        case .pawAttack:
+            if currentAnim?.completedOnce == true { enter(.sitIdle) }
+        case .zoomies:
+            let spd = walkSpeed * 2.0 * CGFloat(dt)
+            move.dx = facingRight ? spd : -spd
+            if stateTime >= 0.8 {
+                stateTime = 0; eventCounter += 1
+                facingRight = !facingRight
+                setAnim(facingRight ? "walk_r" : "walk_l")
+                if eventCounter >= eventMaxFlips { enter(.sitIdle) }
+            }
+        case .chaseBug:
+            switch eventPhase {
+            case 0:
+                let ddx = eventTarget.x - petPos.x
+                let ddy = eventTarget.y - petPos.y
+                let dist = hypot(ddx, ddy)
+                if dist > 2 {
+                    let spd = walkSpeed * CGFloat(dt)
+                    move.dx = (ddx / dist) * spd
+                    move.dy = (ddy / dist) * spd
+                }
+                if dist < 20 || stateTime >= stateDuration {
+                    eventPhase = 1; stateTime = 0; stateDuration = 99
+                    setAnim("paw_att_\(followDir)")
+                }
+            case 1:
+                if currentAnim?.completedOnce == true {
+                    eventPhase = 2; stateTime = 0
+                    setAnim("eat_\(followDir)")
+                }
+            default:
+                if currentAnim?.completedOnce == true { enter(.sitIdle) }
+            }
+        case .stretch:
+            switch eventPhase {
+            case 0:
+                if currentAnim?.completedOnce == true {
+                    eventPhase = 1; stateTime = 0
+                    setAnim("yawn_stand")
+                }
+            default:
+                if currentAnim?.completedOnce == true { enter(.sitIdle) }
+            }
         }
         return move
     }
@@ -217,12 +387,16 @@ class PetBrain {
     private func pickNext() {
         let r = Double.random(in: 0...1)
         switch r {
-        case ..<0.25:  enter(.walkRight)
-        case ..<0.50:  enter(.walkLeft)
-        case ..<0.60:  enter(.sleeping)
-        case ..<0.73:  enter(.meowing)
-        case ..<0.83:  enter(.yawning)
-        case ..<0.93:  enter(.washing)
+        case ..<0.20:  enter(.followMouse)
+        case ..<0.25:  enter(.zoomies)
+        case ..<0.30:  enter(.chaseBug)
+        case ..<0.35:  enter(.stretch)
+        case ..<0.50:  enter(.walkRight)
+        case ..<0.65:  enter(.walkLeft)
+        case ..<0.73:  enter(.sleeping)
+        case ..<0.80:  enter(.meowing)
+        case ..<0.87:  enter(.yawning)
+        case ..<0.94:  enter(.washing)
         default:       enter(.scratching)
         }
     }
@@ -237,7 +411,8 @@ class PetView: NSView {
     var breathOffset: CGFloat = 0
     var isDragging = false
     var gravityEnabled = true
-    private var wasDragged = false
+    var wasDragged = false
+    var mouseDownTime: TimeInterval = 0
     weak var instance: PetInstance?
     private var dragOffset = NSPoint.zero
     private var mouseDownPos = NSPoint.zero
@@ -255,6 +430,7 @@ class PetView: NSView {
     override func mouseDown(with e: NSEvent) {
         isDragging = true
         wasDragged = false
+        mouseDownTime = ProcessInfo.processInfo.systemUptime
         let sLoc = window!.convertPoint(toScreen: e.locationInWindow)
         mouseDownPos = sLoc
         dragOffset = NSPoint(
@@ -266,17 +442,24 @@ class PetView: NSView {
     override func mouseDragged(with e: NSEvent) {
         guard isDragging, let w = window else { return }
         let s = NSEvent.mouseLocation
-        let dist = hypot(s.x - mouseDownPos.x, s.y - mouseDownPos.y)
-        if dist > 3 {
-            wasDragged = true
-            gravityEnabled = true
+        if !wasDragged {
+            if hypot(s.x - mouseDownPos.x, s.y - mouseDownPos.y) > 3 {
+                wasDragged = true
+                gravityEnabled = true
+            }
         }
         w.setFrameOrigin(NSPoint(x: s.x - dragOffset.x, y: s.y - dragOffset.y))
     }
 
     override func mouseUp(with e: NSEvent) {
-        // Clicked without dragging = caught mid-fall, stay put
-        if !wasDragged { gravityEnabled = false }
+        if !wasDragged {
+            gravityEnabled = false
+            if case .petting = instance?.brain.state {
+                instance?.brain.stopPetting()
+            } else {
+                instance?.brain.triggerClickReact()
+            }
+        }
         isDragging = false
     }
 
@@ -334,23 +517,53 @@ class PetInstance {
         let dt = now - lastTick
         lastTick = now
 
+        // Detect long press → petting
+        if view.isDragging && !view.wasDragged {
+            if case .petting = brain.state { }
+            else if (now - view.mouseDownTime) > 1.0 {
+                brain.triggerPetting()
+            }
+        }
+
+        // Feed positions to brain
+        brain.mousePos = NSEvent.mouseLocation
+        brain.petPos = NSPoint(x: window.frame.origin.x + Config.windowSize / 2,
+                               y: window.frame.origin.y + Config.windowSize / 2)
+
         let move = brain.update(dt: dt)
 
         if !view.isDragging {
             var origin = window.frame.origin
 
-            // Gravity: drift to bottom (disabled once caught mid-fall)
+            // Gravity (disabled during airborne states or when caught)
             let bottomY = screenBounds.minY
-            if view.gravityEnabled && origin.y > bottomY + 2 {
+            let noGravityState: Bool = {
+                switch brain.state {
+                case .followMouse, .chaseBug: return true
+                default: return false
+                }
+            }()
+            if view.gravityEnabled && !noGravityState && origin.y > bottomY + 2 {
                 origin.y = max(bottomY, origin.y - 80 * CGFloat(dt))
             }
 
-            // Horizontal movement
+            // Apply movement
             origin.x += move.dx
+            origin.y += move.dy
+
+            // Clamp to screen
             let minX = screenBounds.minX
             let maxX = screenBounds.maxX - Config.windowSize
-            if origin.x <= minX { origin.x = minX; brain.enter(.walkRight) }
-            else if origin.x >= maxX { origin.x = maxX; brain.enter(.walkLeft) }
+            let minY = screenBounds.minY
+            let maxY = screenBounds.maxY - Config.windowSize
+            if origin.x <= minX { origin.x = minX }
+            if origin.x >= maxX { origin.x = maxX }
+            if origin.y < minY { origin.y = minY }
+            if origin.y > maxY { origin.y = maxY }
+
+            // Edge bounce for walk states
+            if case .walkLeft = brain.state, origin.x <= minX { brain.enter(.walkRight) }
+            if case .walkRight = brain.state, origin.x >= maxX { brain.enter(.walkLeft) }
 
             window.setFrameOrigin(origin)
         }
@@ -481,12 +694,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         menuTargetPet = pet
         let menu = NSMenu()
 
-        // Choose Cat
         let catSub = NSMenu()
         for i in 1...13 {
             let item = NSMenuItem(title: "Cat \(i)", action: #selector(ctxPickCat(_:)), keyEquivalent: "")
-            item.tag = i
-            item.target = self
+            item.tag = i; item.target = self
             if pet.catFolder == "Cat \(i)" { item.state = .on }
             catSub.addItem(item)
         }
@@ -494,7 +705,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         catItem.submenu = catSub
         menu.addItem(catItem)
 
-        // Color Variant
         let catDir = "\(Config.packPath)/\(pet.catFolder)"
         if let contents = try? FileManager.default.contentsOfDirectory(atPath: catDir) {
             let variants = contents.filter { name in
@@ -506,8 +716,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 let varSub = NSMenu()
                 for v in variants {
                     let item = NSMenuItem(title: v, action: #selector(ctxPickVariant(_:)), keyEquivalent: "")
-                    item.representedObject = v
-                    item.target = self
+                    item.representedObject = v; item.target = self
                     if v == pet.catVariant { item.state = .on }
                     varSub.addItem(item)
                 }
