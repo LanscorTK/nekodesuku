@@ -236,8 +236,11 @@ class PetView: NSView {
     var petImage: NSImage?
     var breathOffset: CGFloat = 0
     var isDragging = false
+    var gravityEnabled = true
+    private var wasDragged = false
     weak var instance: PetInstance?
     private var dragOffset = NSPoint.zero
+    private var mouseDownPos = NSPoint.zero
 
     override func draw(_ dirtyRect: NSRect) {
         guard let img = petImage else { return }
@@ -251,8 +254,9 @@ class PetView: NSView {
 
     override func mouseDown(with e: NSEvent) {
         isDragging = true
-        let wLoc = e.locationInWindow
-        let sLoc = window!.convertPoint(toScreen: wLoc)
+        wasDragged = false
+        let sLoc = window!.convertPoint(toScreen: e.locationInWindow)
+        mouseDownPos = sLoc
         dragOffset = NSPoint(
             x: sLoc.x - window!.frame.origin.x,
             y: sLoc.y - window!.frame.origin.y
@@ -262,10 +266,19 @@ class PetView: NSView {
     override func mouseDragged(with e: NSEvent) {
         guard isDragging, let w = window else { return }
         let s = NSEvent.mouseLocation
+        let dist = hypot(s.x - mouseDownPos.x, s.y - mouseDownPos.y)
+        if dist > 3 {
+            wasDragged = true
+            gravityEnabled = true
+        }
         w.setFrameOrigin(NSPoint(x: s.x - dragOffset.x, y: s.y - dragOffset.y))
     }
 
-    override func mouseUp(with e: NSEvent) { isDragging = false }
+    override func mouseUp(with e: NSEvent) {
+        // Clicked without dragging = caught mid-fall, stay put
+        if !wasDragged { gravityEnabled = false }
+        isDragging = false
+    }
 
     override func rightMouseDown(with e: NSEvent) {
         guard let inst = instance else { return }
@@ -326,9 +339,9 @@ class PetInstance {
         if !view.isDragging {
             var origin = window.frame.origin
 
-            // Gravity: drift back to screen bottom after drag
+            // Gravity: drift to bottom (disabled once caught mid-fall)
             let bottomY = screenBounds.minY
-            if origin.y > bottomY + 2 {
+            if view.gravityEnabled && origin.y > bottomY + 2 {
                 origin.y = max(bottomY, origin.y - 80 * CGFloat(dt))
             }
 
