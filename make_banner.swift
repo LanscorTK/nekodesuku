@@ -20,19 +20,26 @@ let packPath: String = {
     return "./Kittens pack"
 }()
 
-// Cats to show: (folder, variant, animation, label)
+// 3x3 grid of cats: (folder, variant, animation)
 let cats: [(String, String, String)] = [
-    ("Cat 4", "Cat 4", "walk_right.gif"),
-    ("Cat 6", "Cat 6", "meow_sit.gif"),
-    ("Cat 1", "Cat 1", "sleep1(r).gif"),
-    ("Cat 9", "",       "wash_sit.gif"),
+    ("Cat 4",  "Cat 4",   "walk_right.gif"),     // Orange walking
+    ("Cat 6",  "Cat 6",   "meow_sit.gif"),       // Tuxedo meowing
+    ("Cat 1",  "Cat 1",   "sleep1(r).gif"),      // Gray sleeping
+    ("Cat 3",  "Cat 3",   "scratch(r).gif"),     // Black scratching
+    ("Cat 9",  "",         "wash_sit.gif"),       // White washing
+    ("Cat 2",  "Cat 2",   "on_hind_legs.gif"),   // Silver standing
+    ("Cat 11", "",         "yawn_sit.gif"),       // Peach yawning
+    ("Cat 7",  "Cat 7",   "walk_left.gif"),      // Chocolate walking
+    ("Cat 10", "",         "hiss(r).gif"),        // Siamese hissing
 ]
 
-let scale = 6  // 16px × 6 = 96px per cat
+let cols = 3
+let scale = 6
 let catSize = 16 * scale
-let padding = 20
-let totalW = cats.count * catSize + (cats.count - 1) * padding
-let totalH = catSize
+let padding = 16
+let totalW = cols * catSize + (cols - 1) * padding
+let rows = (cats.count + cols - 1) / cols
+let totalH = rows * catSize + (rows - 1) * padding
 
 guard let ctx = CGContext(
     data: nil, width: totalW, height: totalH,
@@ -58,8 +65,11 @@ for (i, (folder, variant, anim)) in cats.enumerated() {
         continue
     }
 
-    let x = i * (catSize + padding)
-    ctx.draw(frame, in: CGRect(x: x, y: 0, width: catSize, height: catSize))
+    let col = i % cols
+    let row = i / cols
+    let x = col * (catSize + padding)
+    let y = totalH - (row + 1) * catSize - row * padding  // top-to-bottom
+    ctx.draw(frame, in: CGRect(x: x, y: y, width: catSize, height: catSize))
 }
 
 guard let image = ctx.makeImage() else {
