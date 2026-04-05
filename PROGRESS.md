@@ -40,8 +40,8 @@
 - [ ] Developer ID signing + notarization (requires Apple Developer account)
 
 ## Phase 5: Polish & Extras
-- [ ] Settings window (scale, speed, behavior tuning)
-- [ ] Cat naming (hover tooltip)
+- [x] Multi-monitor support (per-pet screen detection, cross-screen walking)
+- [x] Cat naming (hover tooltip, right-click rename, persisted)
+- [x] Settings window (scale, speed, gravity, activity level sliders)
 - [ ] Sound effects (meow/purr with volume control)
-- [ ] Multi-monitor support
 - [ ] Seasonal behaviors

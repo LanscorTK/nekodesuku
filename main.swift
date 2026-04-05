@@ -8,8 +8,29 @@ import ServiceManagement
 
 struct Config {
     static var packPath = ""
-    static let scale: CGFloat = 6.0
+    static var scale: CGFloat = 6.0
+    static var walkSpeed: CGFloat = 30
+    static var gravitySpeed: CGFloat = 80
+    static var activityLevel: Double = 1.0  // 0.0=calm, 1.0=normal, 2.0=hyperactive
     static var windowSize: CGFloat { 16.0 * scale }
+
+    static func save() {
+        let d = UserDefaults.standard
+        d.set(Double(scale), forKey: "cfg_scale")
+        d.set(Double(walkSpeed), forKey: "cfg_walkSpeed")
+        d.set(Double(gravitySpeed), forKey: "cfg_gravity")
+        d.set(activityLevel, forKey: "cfg_activity")
+    }
+
+    static func restore() {
+        let d = UserDefaults.standard
+        if d.object(forKey: "cfg_scale") != nil {
+            scale = CGFloat(d.double(forKey: "cfg_scale"))
+            walkSpeed = CGFloat(d.double(forKey: "cfg_walkSpeed"))
+            gravitySpeed = CGFloat(d.double(forKey: "cfg_gravity"))
+            activityLevel = d.double(forKey: "cfg_activity")
+        }
+    }
 }
 
 // ============================================================================
@@ -115,7 +136,7 @@ class PetBrain {
     var stateTime: TimeInterval = 0
     var stateDuration: TimeInterval = 4
     var facingRight = true
-    let walkSpeed: CGFloat = 30
+    var walkSpeed: CGFloat { Config.walkSpeed }
     var transitionDelay: TimeInterval = 0
 
     // Mouse follow
@@ -386,20 +407,27 @@ class PetBrain {
     }
 
     private func pickNext() {
+        let a = Config.activityLevel
         let r = Double.random(in: 0...1)
-        switch r {
-        case ..<0.20:  enter(.followMouse)
-        case ..<0.25:  enter(.zoomies)
-        case ..<0.30:  enter(.chaseBug)
-        case ..<0.35:  enter(.stretch)
-        case ..<0.50:  enter(.walkRight)
-        case ..<0.65:  enter(.walkLeft)
-        case ..<0.73:  enter(.sleeping)
-        case ..<0.80:  enter(.meowing)
-        case ..<0.87:  enter(.yawning)
-        case ..<0.94:  enter(.washing)
-        default:       enter(.scratching)
-        }
+        // Active behaviors scale with activityLevel; calm behaviors fill the rest
+        let followChance = 0.20 * a
+        let zoomChance   = 0.05 * a
+        let chaseChance  = 0.05 * a
+        let stretchChance = 0.05 * a
+        var t = 0.0
+        t += followChance;  if r < t { enter(.followMouse); return }
+        t += zoomChance;    if r < t { enter(.zoomies); return }
+        t += chaseChance;   if r < t { enter(.chaseBug); return }
+        t += stretchChance; if r < t { enter(.stretch); return }
+        // Remaining probability spread across calm behaviors
+        let calm = 1.0 - t
+        t += calm * 0.23; if r < t { enter(.walkRight); return }
+        t += calm * 0.23; if r < t { enter(.walkLeft); return }
+        t += calm * 0.15; if r < t { enter(.sleeping); return }
+        t += calm * 0.13; if r < t { enter(.meowing); return }
+        t += calm * 0.10; if r < t { enter(.yawning); return }
+        t += calm * 0.10; if r < t { enter(.washing); return }
+        enter(.scratching)
     }
 }
 
@@ -427,6 +455,17 @@ class PetView: NSView {
     }
 
     override var acceptsFirstResponder: Bool { true }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        for area in trackingAreas { removeTrackingArea(area) }
+        addTrackingArea(NSTrackingArea(rect: bounds,
+                                       options: [.mouseEnteredAndExited, .activeAlways],
+                                       owner: self, userInfo: nil))
+    }
+
+    override func mouseEntered(with e: NSEvent) { instance?.showNameTag() }
+    override func mouseExited(with e: NSEvent) { instance?.hideNameTag() }
 
     override func mouseDown(with e: NSEvent) {
         isDragging = true
@@ -480,13 +519,16 @@ class PetInstance {
     let brain: PetBrain
     var catFolder: String
     var catVariant: String
+    var petName: String
     var lastTick: TimeInterval
+    var nameWindow: NSWindow?
 
     var catPath: String { "\(Config.packPath)/\(catFolder)/\(catVariant)" }
 
-    init(catFolder: String, catVariant: String, startX: CGFloat, bottomY: CGFloat) {
+    init(catFolder: String, catVariant: String, petName: String? = nil, startX: CGFloat, bottomY: CGFloat) {
         self.catFolder = catFolder
         self.catVariant = catVariant
+        self.petName = petName ?? catVariant
         self.lastTick = ProcessInfo.processInfo.systemUptime
 
         let sz = Config.windowSize
@@ -513,7 +555,7 @@ class PetInstance {
         window.makeKeyAndOrderFront(nil)
     }
 
-    func tick(screenBounds: NSRect) {
+    func tick() {
         let now = ProcessInfo.processInfo.systemUptime
         let dt = now - lastTick
         lastTick = now
@@ -536,6 +578,11 @@ class PetInstance {
         if !view.isDragging {
             var origin = window.frame.origin
 
+            // Detect which screen this pet is on
+            let petCenter = NSPoint(x: window.frame.midX, y: window.frame.midY)
+            let screenBounds = (NSScreen.screens.first { $0.frame.contains(petCenter) }
+                                ?? NSScreen.main)?.visibleFrame ?? .zero
+
             // Gravity (disabled during airborne states or when caught)
             let bottomY = screenBounds.minY
             let noGravityState: Bool = {
@@ -545,24 +592,25 @@ class PetInstance {
                 }
             }()
             if view.gravityEnabled && !noGravityState && origin.y > bottomY + 2 {
-                origin.y = max(bottomY, origin.y - 80 * CGFloat(dt))
+                origin.y = max(bottomY, origin.y - Config.gravitySpeed * CGFloat(dt))
             }
 
             // Apply movement
             origin.x += move.dx
             origin.y += move.dy
 
-            // Clamp to screen
-            let minX = screenBounds.minX
-            let maxX = screenBounds.maxX - Config.windowSize
-            let minY = screenBounds.minY
+            // Clamp to total screen area (union of all screens)
+            let totalBounds = NSScreen.screens.reduce(NSRect.zero) { $0.union($1.frame) }
+            let minX = totalBounds.minX
+            let maxX = totalBounds.maxX - Config.windowSize
+            let minY = screenBounds.minY  // vertical: use current screen
             let maxY = screenBounds.maxY - Config.windowSize
             if origin.x <= minX { origin.x = minX }
             if origin.x >= maxX { origin.x = maxX }
             if origin.y < minY { origin.y = minY }
             if origin.y > maxY { origin.y = maxY }
 
-            // Edge bounce for walk states
+            // Edge bounce only at outermost edges
             if case .walkLeft = brain.state, origin.x <= minX { brain.enter(.walkRight) }
             if case .walkRight = brain.state, origin.x >= maxX { brain.enter(.walkLeft) }
 
@@ -581,8 +629,168 @@ class PetInstance {
         brain.enter(.sitIdle)
     }
 
+    func showNameTag() {
+        guard nameWindow == nil else { return }
+        let font = NSFont.systemFont(ofSize: 11, weight: .medium)
+        let attrs: [NSAttributedString.Key: Any] = [.font: font]
+        let textSize = (petName as NSString).size(withAttributes: attrs)
+        let padding: CGFloat = 8
+        let w = textSize.width + padding * 2
+        let h: CGFloat = 20
+
+        let petFrame = window.frame
+        let x = petFrame.midX - w / 2
+        let y = petFrame.maxY + 4
+
+        let nw = NSWindow(contentRect: NSRect(x: x, y: y, width: w, height: h),
+                          styleMask: .borderless, backing: .buffered, defer: false)
+        nw.isOpaque = false
+        nw.backgroundColor = .clear
+        nw.level = .floating
+        nw.collectionBehavior = [.canJoinAllSpaces, .stationary]
+        nw.ignoresMouseEvents = true
+
+        let label = NSTextField(labelWithString: petName)
+        label.font = font
+        label.textColor = .white
+        label.alignment = .center
+        label.frame = NSRect(x: 0, y: 0, width: w, height: h)
+        label.wantsLayer = true
+        label.layer?.backgroundColor = NSColor(white: 0, alpha: 0.7).cgColor
+        label.layer?.cornerRadius = 4
+        nw.contentView = label
+        nw.orderFront(nil)
+        nameWindow = nw
+    }
+
+    func hideNameTag() {
+        nameWindow?.orderOut(nil)
+        nameWindow = nil
+    }
+
     func close() {
+        hideNameTag()
         window.orderOut(nil)
+    }
+}
+
+// ============================================================================
+// MARK: - Settings Window
+// ============================================================================
+
+class SettingsWindowController {
+    var window: NSWindow?
+    weak var appDelegate: AppDelegate?
+
+    func show() {
+        if let w = window { w.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true); return }
+
+        let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 320, height: 260),
+                         styleMask: [.titled, .closable], backing: .buffered, defer: false)
+        w.title = "Settings"
+        w.center()
+        w.isReleasedWhenClosed = false
+
+        let view = NSView(frame: w.contentView!.bounds)
+        var y: CGFloat = 220
+
+        func addSlider(label: String, min: Double, max: Double, value: Double,
+                       action: Selector) -> NSSlider {
+            let lbl = NSTextField(labelWithString: label)
+            lbl.frame = NSRect(x: 20, y: y, width: 120, height: 20)
+            view.addSubview(lbl)
+
+            let valLabel = NSTextField(labelWithString: String(format: "%.0f", value))
+            valLabel.frame = NSRect(x: 270, y: y, width: 40, height: 20)
+            valLabel.alignment = .right
+            valLabel.tag = 1000 + Int(y)
+            view.addSubview(valLabel)
+
+            let slider = NSSlider(value: value, minValue: min, maxValue: max,
+                                  target: self, action: action)
+            slider.frame = NSRect(x: 130, y: y, width: 135, height: 20)
+            slider.tag = Int(y)
+            view.addSubview(slider)
+            y -= 45
+            return slider
+        }
+
+        let _ = addSlider(label: "Size (scale)", min: 3, max: 10,
+                          value: Double(Config.scale), action: #selector(scaleChanged(_:)))
+        let _ = addSlider(label: "Walk Speed", min: 10, max: 80,
+                          value: Double(Config.walkSpeed), action: #selector(speedChanged(_:)))
+        let _ = addSlider(label: "Gravity", min: 20, max: 200,
+                          value: Double(Config.gravitySpeed), action: #selector(gravityChanged(_:)))
+        let _ = addSlider(label: "Activity", min: 0, max: 2,
+                          value: Config.activityLevel, action: #selector(activityChanged(_:)))
+
+        // Activity labels
+        let calmLabel = NSTextField(labelWithString: "calm")
+        calmLabel.frame = NSRect(x: 130, y: y + 20, width: 40, height: 16)
+        calmLabel.font = NSFont.systemFont(ofSize: 9)
+        calmLabel.textColor = .secondaryLabelColor
+        view.addSubview(calmLabel)
+        let hyperLabel = NSTextField(labelWithString: "hyper")
+        hyperLabel.frame = NSRect(x: 230, y: y + 20, width: 40, height: 16)
+        hyperLabel.font = NSFont.systemFont(ofSize: 9)
+        hyperLabel.textColor = .secondaryLabelColor
+        view.addSubview(hyperLabel)
+
+        y -= 5
+        let resetBtn = NSButton(title: "Reset to Defaults", target: self, action: #selector(resetDefaults(_:)))
+        resetBtn.frame = NSRect(x: 20, y: y, width: 140, height: 30)
+        view.addSubview(resetBtn)
+
+        w.contentView = view
+        w.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+        window = w
+    }
+
+    private func updateValueLabel(slider: NSSlider, format: String = "%.0f") {
+        guard let view = slider.superview else { return }
+        let tag = 1000 + slider.tag
+        if let label = view.viewWithTag(tag) as? NSTextField {
+            label.stringValue = String(format: format, slider.doubleValue)
+        }
+    }
+
+    @objc func scaleChanged(_ sender: NSSlider) {
+        updateValueLabel(slider: sender)
+        Config.scale = CGFloat(sender.doubleValue)
+        Config.save()
+        appDelegate?.resizeAllPets()
+    }
+
+    @objc func speedChanged(_ sender: NSSlider) {
+        updateValueLabel(slider: sender)
+        Config.walkSpeed = CGFloat(sender.doubleValue)
+        Config.save()
+    }
+
+    @objc func gravityChanged(_ sender: NSSlider) {
+        updateValueLabel(slider: sender)
+        Config.gravitySpeed = CGFloat(sender.doubleValue)
+        Config.save()
+    }
+
+    @objc func activityChanged(_ sender: NSSlider) {
+        updateValueLabel(slider: sender, format: "%.1f")
+        Config.activityLevel = sender.doubleValue
+        Config.save()
+    }
+
+    @objc func resetDefaults(_ sender: Any) {
+        Config.scale = 6.0
+        Config.walkSpeed = 30
+        Config.gravitySpeed = 80
+        Config.activityLevel = 1.0
+        Config.save()
+        appDelegate?.resizeAllPets()
+        // Reopen to refresh sliders
+        window?.close()
+        window = nil
+        show()
     }
 }
 
@@ -593,18 +801,19 @@ class PetInstance {
 class AppDelegate: NSObject, NSApplicationDelegate {
     var pets: [PetInstance] = []
     var timer: Timer!
-    var screenBounds: NSRect = .zero
     var statusItem: NSStatusItem!
     var menuTargetPet: PetInstance?
+    let settingsController = SettingsWindowController()
 
     func applicationDidFinishLaunching(_ n: Notification) {
         NSApp.setActivationPolicy(.accessory)
 
-        guard let screen = NSScreen.main else {
+        guard NSScreen.main != nil else {
             print("No screen found"); NSApp.terminate(nil); return
         }
-        screenBounds = screen.visibleFrame
 
+        Config.restore()
+        settingsController.appDelegate = self
         restorePets()
 
         if pets.isEmpty {
@@ -621,8 +830,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func tick() {
-        if let screen = NSScreen.main { screenBounds = screen.visibleFrame }
-        for pet in pets { pet.tick(screenBounds: screenBounds) }
+        for pet in pets { pet.tick() }
     }
 
     // MARK: - Status Bar
@@ -652,7 +860,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(.separator())
 
         for (i, pet) in pets.enumerated() {
-            let title = "Cat #\(i + 1): \(pet.catVariant)"
+            let title = "Cat #\(i + 1): \(pet.petName)"
             let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
             let sub = NSMenu()
             for c in 1...13 {
@@ -676,6 +884,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             loginItem.state = SMAppService.mainApp.status == .enabled ? .on : .off
             menu.addItem(loginItem)
         }
+
+        let settingsItem = NSMenuItem(title: "Settings…", action: #selector(openSettings), keyEquivalent: ",")
+        settingsItem.target = self
+        menu.addItem(settingsItem)
 
         let updateItem = NSMenuItem(title: "Check for Updates…", action: #selector(checkForUpdates), keyEquivalent: "")
         updateItem.target = self
@@ -800,8 +1012,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
 
+        menu.addItem(.separator())
+        let renameItem = NSMenuItem(title: "Rename…", action: #selector(ctxRenamePet), keyEquivalent: "")
+        renameItem.target = self
+        menu.addItem(renameItem)
+
         if pets.count > 1 {
-            menu.addItem(.separator())
             let rm = NSMenuItem(title: "Remove This Cat", action: #selector(ctxRemovePet), keyEquivalent: "")
             rm.target = self
             menu.addItem(rm)
@@ -826,6 +1042,26 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         savePets()
     }
 
+    @objc func ctxRenamePet() {
+        guard let pet = menuTargetPet else { return }
+        let alert = NSAlert()
+        alert.messageText = "Rename Cat"
+        alert.informativeText = "Enter a new name:"
+        alert.addButton(withTitle: "OK")
+        alert.addButton(withTitle: "Cancel")
+        let input = NSTextField(frame: NSRect(x: 0, y: 0, width: 200, height: 24))
+        input.stringValue = pet.petName
+        alert.accessoryView = input
+        alert.window.initialFirstResponder = input
+        if alert.runModal() == .alertFirstButtonReturn {
+            let name = input.stringValue.trimmingCharacters(in: .whitespaces)
+            if !name.isEmpty {
+                pet.petName = name
+                savePets()
+            }
+        }
+    }
+
     @objc func ctxRemovePet() {
         guard let pet = menuTargetPet, pets.count > 1,
               let idx = pets.firstIndex(where: { $0 === pet }) else { return }
@@ -834,10 +1070,28 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         savePets()
     }
 
+    // MARK: - Settings
+
+    @objc func openSettings() {
+        settingsController.show()
+    }
+
+    func resizeAllPets() {
+        let sz = Config.windowSize
+        for pet in pets {
+            let origin = pet.window.frame.origin
+            pet.window.setFrame(NSRect(x: origin.x, y: origin.y, width: sz, height: sz), display: false)
+            pet.view.frame = NSRect(x: 0, y: 0, width: sz, height: sz)
+            pet.view.updateTrackingAreas()
+            pet.brain.loadAnims(catPath: pet.catPath)
+            pet.brain.enter(.sitIdle)
+        }
+    }
+
     // MARK: - Persistence
 
     func savePets() {
-        let data = pets.map { ["folder": $0.catFolder, "variant": $0.catVariant] }
+        let data = pets.map { ["folder": $0.catFolder, "variant": $0.catVariant, "name": $0.petName] }
         UserDefaults.standard.set(data, forKey: "savedPets")
     }
 
@@ -846,7 +1100,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             for entry in saved {
                 let folder = entry["folder"] ?? "Cat 1"
                 let variant = entry["variant"] ?? folder
-                addPet(catFolder: folder, catVariant: variant)
+                let name = entry["name"]
+                addPet(catFolder: folder, catVariant: variant, petName: name)
             }
         }
         // Fall back to default if nothing loaded (first launch or stale saved data)
@@ -857,11 +1112,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     // MARK: - Pet Management
 
-    func addPet(catFolder: String, catVariant: String) {
-        let startX = screenBounds.minX + CGFloat.random(in: 50...(max(51, screenBounds.width - 150)))
+    func addPet(catFolder: String, catVariant: String, petName: String? = nil) {
+        let mouseScreen = NSScreen.screens.first { $0.frame.contains(NSEvent.mouseLocation) }
+            ?? NSScreen.main ?? NSScreen.screens.first!
+        let sb = mouseScreen.visibleFrame
+        let startX = sb.minX + CGFloat.random(in: 50...(max(51, sb.width - 150)))
         let pet = PetInstance(
-            catFolder: catFolder, catVariant: catVariant,
-            startX: startX, bottomY: screenBounds.minY
+            catFolder: catFolder, catVariant: catVariant, petName: petName,
+            startX: startX, bottomY: sb.minY
         )
         guard !pet.brain.anims.isEmpty else { pet.close(); return }
         pets.append(pet)
