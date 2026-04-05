@@ -1,6 +1,6 @@
 # NekoDeskuToppu
 
-A macOS desktop pet app powered by pixel art kittens from the [Sprout Lands](https://cupnooble.itch.io/sprout-lands-asset-pack) asset pack.
+A macOS desktop pet app powered by pixel art kittens from the [Animated Pixel Kittens](https://last-tick.itch.io/animated-pixel-kittens-cats-32x32) asset pack by Last Tick.
 
 16x16 sprite cats live on your screen — walking, sleeping, climbing walls, and being adorable.
 
@@ -77,7 +77,7 @@ Right-click the app -> Open -> Click "Open" in the dialog.
 
 ## Build from Source
 
-Requires macOS 13+, Swift 5.9+ (Xcode Command Line Tools), and the [Kittens pack](https://cupnooble.itch.io/sprout-lands-asset-pack) assets.
+Requires macOS 13+, Swift 5.9+ (Xcode Command Line Tools), and the [Kittens pack](https://last-tick.itch.io/animated-pixel-kittens-cats-32x32) assets.
 
 ```bash
 # Build .app bundle (auto-detects Kittens pack in ~/Downloads)
@@ -111,4 +111,4 @@ swift make_icon.swift
 
 ## Assets
 
-This app uses the "Kittens pack" pixel art assets by [Cup Nooble](https://cupnooble.itch.io/sprout-lands-asset-pack). The pack is not included in this repository.
+This app uses the "Kittens pack" pixel art assets by [Last Tick](https://last-tick.itch.io/animated-pixel-kittens-cats-32x32). The pack is not included in this repository.
