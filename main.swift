@@ -14,6 +14,20 @@ struct Config {
     static var activityLevel: Double = 1.0  // 0.0=calm, 1.0=normal, 2.0=hyperactive
     static var windowSize: CGFloat { 16.0 * scale }
 
+    static let catNames: [String: String] = [
+        "Cat 1": "Gray",      "Cat 2": "Silver",
+        "Cat 3": "Black",     "Cat 4": "Orange",
+        "Cat 5": "Ash",       "Cat 6": "Tuxedo",
+        "Cat 7": "Chocolate", "Cat 8": "Cream",
+        "Cat 9": "White",     "Cat 10": "Siamese",
+        "Cat 11": "Peach",    "Cat 12": "Brown",
+        "Cat 13": "Lilac",
+    ]
+
+    static func catDisplayName(_ folder: String) -> String {
+        catNames[folder] ?? folder
+    }
+
     static func save() {
         let d = UserDefaults.standard
         d.set(Double(scale), forKey: "cfg_scale")
@@ -546,12 +560,15 @@ class PetInstance {
     var lastTick: TimeInterval
     var nameWindow: NSWindow?
 
-    var catPath: String { "\(Config.packPath)/\(catFolder)/\(catVariant)" }
+    var catPath: String {
+        if catVariant.isEmpty { return "\(Config.packPath)/\(catFolder)" }
+        return "\(Config.packPath)/\(catFolder)/\(catVariant)"
+    }
 
     init(catFolder: String, catVariant: String, petName: String? = nil, startX: CGFloat, bottomY: CGFloat) {
         self.catFolder = catFolder
         self.catVariant = catVariant
-        self.petName = petName ?? catVariant
+        self.petName = petName ?? Config.catDisplayName(catFolder)
         self.lastTick = ProcessInfo.processInfo.systemUptime
 
         let sz = Config.windowSize
@@ -724,82 +741,371 @@ class PetInstance {
 }
 
 // ============================================================================
-// MARK: - Settings Window
+// MARK: - Main Panel
 // ============================================================================
 
-class SettingsWindowController {
+func extractThumbnail(gifPath: String, size: CGFloat) -> NSImage? {
+    guard let src = CGImageSourceCreateWithURL(URL(fileURLWithPath: gifPath) as CFURL, nil),
+          CGImageSourceGetCount(src) > 0,
+          let cg = CGImageSourceCreateImageAtIndex(src, 0, nil) else { return nil }
+    let px = Int(size * 2)
+    guard let ctx = CGContext(
+        data: nil, width: px, height: px,
+        bitsPerComponent: 8, bytesPerRow: 0,
+        space: CGColorSpaceCreateDeviceRGB(),
+        bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+    ) else { return nil }
+    ctx.interpolationQuality = .none
+    ctx.draw(cg, in: CGRect(x: 0, y: 0, width: px, height: px))
+    guard let scaled = ctx.makeImage() else { return nil }
+    return NSImage(cgImage: scaled, size: NSSize(width: size, height: size))
+}
+
+func gifPathForCat(folder: String, variant: String) -> String {
+    let catDir = "\(Config.packPath)/\(folder)"
+    if variant.isEmpty {
+        return "\(catDir)/meow_sit.gif"
+    }
+    return "\(catDir)/\(variant)/meow_sit.gif"
+}
+
+class MainPanelController {
     var window: NSWindow?
     weak var appDelegate: AppDelegate?
+    var catListView: NSView?
+    var rightHeaderLabel: NSTextField?
+    var selectedPetIndex: Int? = nil  // nil = add mode, Int = change breed mode
+
+    let winW: CGFloat = 560
+    let winH: CGFloat = 500
+    let leftW: CGFloat = 255
+    let topH: CGFloat = 290  // height of cat area (above settings)
 
     func show() {
-        if let w = window { w.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true); return }
+        if let w = window {
+            rebuildCatList()
+            w.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
+            return
+        }
 
-        let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 320, height: 260),
+        let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: winW, height: winH),
                          styleMask: [.titled, .closable], backing: .buffered, defer: false)
-        w.title = "Settings"
+        w.title = "NekoDeskuToppu"
         w.center()
         w.isReleasedWhenClosed = false
 
-        let view = NSView(frame: w.contentView!.bounds)
-        var y: CGFloat = 220
+        let root = NSView(frame: w.contentView!.bounds)
 
-        func addSlider(label: String, min: Double, max: Double, value: Double,
-                       action: Selector) -> NSSlider {
-            let lbl = NSTextField(labelWithString: label)
-            lbl.frame = NSRect(x: 20, y: y, width: 120, height: 20)
-            view.addSubview(lbl)
+        // === Left column: My Cats ===
+        let leftHeader = NSTextField(labelWithString: "My Cats")
+        leftHeader.font = NSFont.boldSystemFont(ofSize: 14)
+        leftHeader.frame = NSRect(x: 16, y: winH - 32, width: 200, height: 20)
+        root.addSubview(leftHeader)
 
-            let valLabel = NSTextField(labelWithString: String(format: "%.0f", value))
-            valLabel.frame = NSRect(x: 270, y: y, width: 40, height: 20)
-            valLabel.alignment = .right
-            valLabel.tag = 1000 + Int(y)
-            view.addSubview(valLabel)
+        let scrollH: CGFloat = topH - 80
+        let catScroll = NSScrollView(frame: NSRect(x: 10, y: winH - 32 - scrollH - 8, width: leftW - 15, height: scrollH))
+        catScroll.hasVerticalScroller = true
+        catScroll.drawsBackground = false
+        catScroll.autohidesScrollers = true
+        let catContent = NSView(frame: NSRect(x: 0, y: 0, width: leftW - 30, height: scrollH))
+        catScroll.documentView = catContent
+        root.addSubview(catScroll)
+        catListView = catContent
 
-            let slider = NSSlider(value: value, minValue: min, maxValue: max,
-                                  target: self, action: action)
-            slider.frame = NSRect(x: 130, y: y, width: 135, height: 20)
-            slider.tag = Int(y)
-            view.addSubview(slider)
-            y -= 45
-            return slider
-        }
+        let summonBtn = NSButton(title: "Summon All", target: self, action: #selector(summonAll))
+        summonBtn.frame = NSRect(x: 16, y: winH - topH - 4, width: 110, height: 28)
+        root.addSubview(summonBtn)
 
-        let _ = addSlider(label: "Size (scale)", min: 3, max: 10,
-                          value: Double(Config.scale), action: #selector(scaleChanged(_:)))
-        let _ = addSlider(label: "Walk Speed", min: 10, max: 80,
-                          value: Double(Config.walkSpeed), action: #selector(speedChanged(_:)))
-        let _ = addSlider(label: "Gravity", min: 20, max: 200,
-                          value: Double(Config.gravitySpeed), action: #selector(gravityChanged(_:)))
-        let _ = addSlider(label: "Activity", min: 0, max: 2,
-                          value: Config.activityLevel, action: #selector(activityChanged(_:)))
+        // === Vertical divider ===
+        let vDiv = NSBox(frame: NSRect(x: leftW, y: winH - topH, width: 1, height: topH - 10))
+        vDiv.boxType = .separator
+        root.addSubview(vDiv)
 
-        // Activity labels
-        let calmLabel = NSTextField(labelWithString: "calm")
-        calmLabel.frame = NSRect(x: 130, y: y + 20, width: 40, height: 16)
-        calmLabel.font = NSFont.systemFont(ofSize: 9)
-        calmLabel.textColor = .secondaryLabelColor
-        view.addSubview(calmLabel)
-        let hyperLabel = NSTextField(labelWithString: "hyper")
-        hyperLabel.frame = NSRect(x: 230, y: y + 20, width: 40, height: 16)
-        hyperLabel.font = NSFont.systemFont(ofSize: 9)
-        hyperLabel.textColor = .secondaryLabelColor
-        view.addSubview(hyperLabel)
+        // === Right column: Add a Cat / Change Breed ===
+        let rHeader = NSTextField(labelWithString: "Add a Cat")
+        rHeader.font = NSFont.boldSystemFont(ofSize: 14)
+        rHeader.frame = NSRect(x: leftW + 16, y: winH - 32, width: 260, height: 20)
+        root.addSubview(rHeader)
+        rightHeaderLabel = rHeader
 
-        y -= 5
-        let resetBtn = NSButton(title: "Reset to Defaults", target: self, action: #selector(resetDefaults(_:)))
-        resetBtn.frame = NSRect(x: 20, y: y, width: 140, height: 30)
-        view.addSubview(resetBtn)
+        buildCatGrid(in: root)
 
-        w.contentView = view
+        // === Horizontal divider ===
+        let hDiv = NSBox(frame: NSRect(x: 10, y: winH - topH - 10, width: winW - 20, height: 1))
+        hDiv.boxType = .separator
+        root.addSubview(hDiv)
+
+        // === Bottom: Settings ===
+        let sHeader = NSTextField(labelWithString: "Settings")
+        sHeader.font = NSFont.boldSystemFont(ofSize: 14)
+        sHeader.frame = NSRect(x: 16, y: winH - topH - 36, width: 200, height: 20)
+        root.addSubview(sHeader)
+
+        buildSettings(in: root, baseY: winH - topH - 65)
+
+        w.contentView = root
         w.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
         window = w
+
+        rebuildCatList()
     }
+
+    // MARK: Cat List
+
+    func rebuildCatList() {
+        guard let container = catListView else { return }
+        container.subviews.removeAll()
+
+        guard let pets = appDelegate?.pets else { return }
+        let rowH: CGFloat = 65
+        let contentW = container.enclosingScrollView?.frame.width ?? 240
+        let totalH = max(CGFloat(pets.count) * rowH, container.enclosingScrollView?.frame.height ?? 200)
+        container.frame = NSRect(x: 0, y: 0, width: contentW, height: totalH)
+
+        for (i, pet) in pets.enumerated() {
+            let y = totalH - CGFloat(i + 1) * rowH
+            let row = NSView(frame: NSRect(x: 0, y: y, width: contentW, height: rowH))
+            row.wantsLayer = true
+
+            // Selected highlight
+            if selectedPetIndex == i {
+                row.layer?.backgroundColor = NSColor.controlAccentColor.withAlphaComponent(0.15).cgColor
+                row.layer?.cornerRadius = 6
+            }
+
+            // Click to select/deselect
+            let clickBtn = NSButton(frame: NSRect(x: 0, y: 0, width: contentW, height: rowH))
+            clickBtn.isBordered = false
+            clickBtn.isTransparent = true
+            clickBtn.tag = i
+            clickBtn.target = self
+            clickBtn.action = #selector(selectCat(_:))
+            row.addSubview(clickBtn)
+
+            // Thumbnail (vertically centered)
+            let thumbSize: CGFloat = 40
+            let thumbY = (rowH - thumbSize) / 2
+            let gifPath = gifPathForCat(folder: pet.catFolder, variant: pet.catVariant)
+            if let thumb = extractThumbnail(gifPath: gifPath, size: thumbSize) {
+                let iv = NSImageView(frame: NSRect(x: 8, y: thumbY, width: thumbSize, height: thumbSize))
+                iv.image = thumb
+                iv.imageScaling = .scaleNone
+                row.addSubview(iv)
+            }
+
+            // Name (vertically centered with breed)
+            let textX: CGFloat = 56
+            let name = NSTextField(labelWithString: pet.petName)
+            name.font = NSFont.systemFont(ofSize: 13, weight: .medium)
+            name.frame = NSRect(x: textX, y: 36, width: 120, height: 18)
+            row.addSubview(name)
+
+            // Breed
+            let info = NSTextField(labelWithString: Config.catDisplayName(pet.catFolder))
+            info.font = NSFont.systemFont(ofSize: 11)
+            info.textColor = .secondaryLabelColor
+            info.frame = NSRect(x: textX, y: 20, width: 120, height: 15)
+            row.addSubview(info)
+
+            // Buttons row
+            let btnY: CGFloat = 2
+            let renameBtn = NSButton(title: "Rename", target: self, action: #selector(renameCat(_:)))
+            renameBtn.font = NSFont.systemFont(ofSize: 10)
+            renameBtn.tag = i
+            renameBtn.frame = NSRect(x: textX, y: btnY, width: 58, height: 18)
+            renameBtn.bezelStyle = .inline
+            row.addSubview(renameBtn)
+
+            if pets.count > 1 {
+                let delBtn = NSButton(title: "Del", target: self, action: #selector(removeCat(_:)))
+                delBtn.font = NSFont.systemFont(ofSize: 10)
+                delBtn.tag = i
+                delBtn.frame = NSRect(x: textX + 62, y: btnY, width: 36, height: 18)
+                delBtn.bezelStyle = .inline
+                row.addSubview(delBtn)
+            }
+
+            // Bottom separator
+            if i < pets.count - 1 {
+                let sep = NSBox(frame: NSRect(x: 8, y: 0, width: contentW - 16, height: 1))
+                sep.boxType = .separator
+                row.addSubview(sep)
+            }
+
+            container.addSubview(row)
+        }
+
+        updateRightHeader()
+    }
+
+    func updateRightHeader() {
+        if let idx = selectedPetIndex, let pets = appDelegate?.pets, idx < pets.count {
+            rightHeaderLabel?.stringValue = "Change Breed: \(pets[idx].petName)"
+        } else {
+            selectedPetIndex = nil
+            rightHeaderLabel?.stringValue = "Add a Cat"
+        }
+    }
+
+    // MARK: Cat Grid
+
+    func buildCatGrid(in root: NSView) {
+        let cols = 5
+        let cellW: CGFloat = 54
+        let cellH: CGFloat = 72
+        let gridX: CGFloat = leftW + 14
+        let gridTopY: CGFloat = winH - 70
+
+        for c in 1...13 {
+            let col = (c - 1) % cols
+            let row = (c - 1) / cols
+            let x = gridX + CGFloat(col) * cellW
+            let y = gridTopY - CGFloat(row) * cellH
+
+            let folder = "Cat \(c)"
+            let catDir = "\(Config.packPath)/\(folder)"
+            let gifPath: String
+            if FileManager.default.fileExists(atPath: "\(catDir)/meow_sit.gif") {
+                gifPath = "\(catDir)/meow_sit.gif"
+            } else {
+                let variant = appDelegate?.findFirstVariant(folder: folder) ?? ""
+                gifPath = variant.isEmpty ? "\(catDir)/meow_sit.gif" : "\(catDir)/\(variant)/meow_sit.gif"
+            }
+
+            let btn = NSButton(frame: NSRect(x: x, y: y, width: 46, height: 46))
+            btn.bezelStyle = .regularSquare
+            btn.isBordered = true
+            if let thumb = extractThumbnail(gifPath: gifPath, size: 38) {
+                btn.image = thumb
+                btn.imagePosition = .imageOnly
+                btn.imageScaling = .scaleNone
+            } else {
+                btn.title = folder
+            }
+            btn.tag = c
+            btn.target = self
+            btn.action = #selector(gridCatClicked(_:))
+            root.addSubview(btn)
+
+            let label = NSTextField(labelWithString: Config.catDisplayName(folder))
+            label.font = NSFont.systemFont(ofSize: 9)
+            label.alignment = .center
+            label.frame = NSRect(x: x - 4, y: y - 16, width: 54, height: 14)
+            root.addSubview(label)
+        }
+    }
+
+    // MARK: Settings
+
+    func buildSettings(in root: NSView, baseY: CGFloat) {
+        var y = baseY
+        let sliders: [(String, Double, Double, Double, Selector, String)] = [
+            ("Size",     3, 10,  Double(Config.scale),        #selector(scaleChanged(_:)),    "%.0f"),
+            ("Speed",   10, 80,  Double(Config.walkSpeed),    #selector(speedChanged(_:)),    "%.0f"),
+            ("Gravity", 20, 200, Double(Config.gravitySpeed), #selector(gravityChanged(_:)),  "%.0f"),
+            ("Activity", 0, 2,   Config.activityLevel,        #selector(activityChanged(_:)), "%.1f"),
+        ]
+
+        for (label, min, max, val, action, fmt) in sliders {
+            let lbl = NSTextField(labelWithString: label)
+            lbl.frame = NSRect(x: 20, y: y, width: 65, height: 20)
+            lbl.font = NSFont.systemFont(ofSize: 11)
+            root.addSubview(lbl)
+
+            let slider = NSSlider(value: val, minValue: min, maxValue: max,
+                                  target: self, action: action)
+            slider.frame = NSRect(x: 90, y: y, width: winW - 160, height: 20)
+            slider.tag = Int(y)
+            root.addSubview(slider)
+
+            let valLbl = NSTextField(labelWithString: String(format: fmt, val))
+            valLbl.frame = NSRect(x: winW - 60, y: y, width: 45, height: 20)
+            valLbl.alignment = .right
+            valLbl.font = NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .regular)
+            valLbl.tag = 1000 + Int(y)
+            root.addSubview(valLbl)
+
+            y -= 28
+        }
+
+        let resetBtn = NSButton(title: "Reset Defaults", target: self, action: #selector(resetDefaults(_:)))
+        resetBtn.frame = NSRect(x: winW - 130, y: y - 2, width: 110, height: 24)
+        resetBtn.font = NSFont.systemFont(ofSize: 10)
+        root.addSubview(resetBtn)
+    }
+
+    // MARK: Actions
+
+    @objc func selectCat(_ sender: NSButton) {
+        if selectedPetIndex == sender.tag {
+            selectedPetIndex = nil  // deselect
+        } else {
+            selectedPetIndex = sender.tag
+        }
+        rebuildCatList()
+    }
+
+    @objc func gridCatClicked(_ sender: NSButton) {
+        let folder = "Cat \(sender.tag)"
+        let variant = appDelegate?.findFirstVariant(folder: folder) ?? ""
+
+        if let idx = selectedPetIndex, let pets = appDelegate?.pets, idx < pets.count {
+            // Change breed mode
+            pets[idx].changeCat(folder: folder, variant: variant)
+            appDelegate?.savePets()
+            rebuildCatList()
+        } else {
+            // Add mode
+            appDelegate?.addPet(catFolder: folder, catVariant: variant)
+            appDelegate?.savePets()
+            rebuildCatList()
+        }
+    }
+
+    @objc func renameCat(_ sender: NSButton) {
+        guard let pets = appDelegate?.pets, sender.tag < pets.count else { return }
+        let pet = pets[sender.tag]
+        let alert = NSAlert()
+        alert.messageText = "Rename Cat"
+        alert.informativeText = "Enter a new name:"
+        alert.addButton(withTitle: "OK")
+        alert.addButton(withTitle: "Cancel")
+        let input = NSTextField(frame: NSRect(x: 0, y: 0, width: 200, height: 24))
+        input.stringValue = pet.petName
+        alert.accessoryView = input
+        alert.window.initialFirstResponder = input
+        if alert.runModal() == .alertFirstButtonReturn {
+            let name = input.stringValue.trimmingCharacters(in: .whitespaces)
+            if !name.isEmpty {
+                pet.petName = name
+                appDelegate?.savePets()
+                rebuildCatList()
+            }
+        }
+    }
+
+    @objc func removeCat(_ sender: NSButton) {
+        guard let delegate = appDelegate, sender.tag < delegate.pets.count,
+              delegate.pets.count > 1 else { return }
+        if selectedPetIndex == sender.tag { selectedPetIndex = nil }
+        else if let sel = selectedPetIndex, sel > sender.tag { selectedPetIndex = sel - 1 }
+        let pet = delegate.pets.remove(at: sender.tag)
+        pet.close()
+        delegate.savePets()
+        rebuildCatList()
+    }
+
+    @objc func summonAll() {
+        appDelegate?.summonAllPets()
+    }
+
+    // MARK: Settings Actions
 
     private func updateValueLabel(slider: NSSlider, format: String = "%.0f") {
         guard let view = slider.superview else { return }
-        let tag = 1000 + slider.tag
-        if let label = view.viewWithTag(tag) as? NSTextField {
+        if let label = view.viewWithTag(1000 + slider.tag) as? NSTextField {
             label.stringValue = String(format: format, slider.doubleValue)
         }
     }
@@ -836,7 +1142,6 @@ class SettingsWindowController {
         Config.activityLevel = 1.0
         Config.save()
         appDelegate?.resizeAllPets()
-        // Reopen to refresh sliders
         window?.close()
         window = nil
         show()
@@ -852,7 +1157,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     var timer: Timer!
     var statusItem: NSStatusItem!
     var menuTargetPet: PetInstance?
-    let settingsController = SettingsWindowController()
+    let panelController = MainPanelController()
 
     func applicationDidFinishLaunching(_ n: Notification) {
         NSApp.setActivationPolicy(.accessory)
@@ -862,7 +1167,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         Config.restore()
-        settingsController.appDelegate = self
+        panelController.appDelegate = self
         restorePets()
 
         if pets.isEmpty {
@@ -886,7 +1191,17 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     func setupStatusBar() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        statusItem.button?.title = "🐱"
+
+        // Pixel cat icon from Kittens pack (use variant detection)
+        let iconVariant = findFirstVariant(folder: "Cat 1")
+        let iconGIF = gifPathForCat(folder: "Cat 1", variant: iconVariant)
+        if let thumb = extractThumbnail(gifPath: iconGIF, size: 18) {
+            thumb.isTemplate = true
+            statusItem.button?.image = thumb
+        } else {
+            statusItem.button?.title = "🐱"
+        }
+
         let menu = NSMenu()
         menu.delegate = self
         statusItem.menu = menu
@@ -899,6 +1214,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let addItem = NSMenuItem(title: "Add Cat", action: #selector(addRandomPet), keyEquivalent: "n")
         addItem.target = self
         menu.addItem(addItem)
+
+        let summonItem = NSMenuItem(title: "Summon All Cats", action: #selector(summonAllPets), keyEquivalent: "s")
+        summonItem.target = self
+        menu.addItem(summonItem)
 
         if pets.count > 1 {
             let rmItem = NSMenuItem(title: "Remove Last Cat", action: #selector(removeLastPet), keyEquivalent: "")
@@ -913,10 +1232,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
             let sub = NSMenu()
             for c in 1...13 {
-                let ci = NSMenuItem(title: "Cat \(c)", action: #selector(statusChangeCat(_:)), keyEquivalent: "")
+                let folder = "Cat \(c)"
+                let ci = NSMenuItem(title: Config.catDisplayName(folder), action: #selector(statusChangeCat(_:)), keyEquivalent: "")
                 ci.tag = i * 100 + c
                 ci.target = self
-                if pet.catFolder == "Cat \(c)" { ci.state = .on }
+                if pet.catFolder == folder { ci.state = .on }
                 sub.addItem(ci)
             }
             item.submenu = sub
@@ -934,9 +1254,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             menu.addItem(loginItem)
         }
 
-        let settingsItem = NSMenuItem(title: "Settings…", action: #selector(openSettings), keyEquivalent: ",")
-        settingsItem.target = self
-        menu.addItem(settingsItem)
+        let panelItem = NSMenuItem(title: "Open Panel…", action: #selector(openPanel), keyEquivalent: ",")
+        panelItem.target = self
+        menu.addItem(panelItem)
 
         let updateItem = NSMenuItem(title: "Check for Updates…", action: #selector(checkForUpdates), keyEquivalent: "")
         updateItem.target = self
@@ -1008,6 +1328,18 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         savePets()
     }
 
+    @objc func summonAllPets() {
+        let mouse = NSEvent.mouseLocation
+        let screen = NSScreen.screens.first { $0.frame.contains(mouse) } ?? NSScreen.main!
+        let bottomY = screen.visibleFrame.minY
+        for (i, pet) in pets.enumerated() {
+            let x = mouse.x - Config.windowSize / 2 + CGFloat(i) * (Config.windowSize + 10)
+            pet.window.setFrameOrigin(NSPoint(x: x, y: bottomY))
+            pet.view.gravityEnabled = true
+            pet.brain.enter(.sitIdle)
+        }
+    }
+
     @objc func removeLastPet() {
         guard pets.count > 1 else { return }
         pets.removeLast().close()
@@ -1031,9 +1363,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         let catSub = NSMenu()
         for i in 1...13 {
-            let item = NSMenuItem(title: "Cat \(i)", action: #selector(ctxPickCat(_:)), keyEquivalent: "")
+            let folder = "Cat \(i)"
+            let item = NSMenuItem(title: Config.catDisplayName(folder), action: #selector(ctxPickCat(_:)), keyEquivalent: "")
             item.tag = i; item.target = self
-            if pet.catFolder == "Cat \(i)" { item.state = .on }
+            if pet.catFolder == folder { item.state = .on }
             catSub.addItem(item)
         }
         let catItem = NSMenuItem(title: "Choose Cat", action: nil, keyEquivalent: "")
@@ -1062,6 +1395,22 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         menu.addItem(.separator())
+
+        // Interactions
+        let actSub = NSMenu()
+        let actions: [(String, Int)] = [
+            ("Sleep", 1), ("Meow", 2), ("Yawn", 3),
+            ("Wash", 4), ("Scratch", 5), ("Zoomies", 6),
+        ]
+        for (title, tag) in actions {
+            let item = NSMenuItem(title: title, action: #selector(ctxDoAction(_:)), keyEquivalent: "")
+            item.tag = tag; item.target = self
+            actSub.addItem(item)
+        }
+        let actItem = NSMenuItem(title: "Do…", action: nil, keyEquivalent: "")
+        actItem.submenu = actSub
+        menu.addItem(actItem)
+
         let renameItem = NSMenuItem(title: "Rename…", action: #selector(ctxRenamePet), keyEquivalent: "")
         renameItem.target = self
         menu.addItem(renameItem)
@@ -1073,6 +1422,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         menu.addItem(.separator())
+        let panelItem = NSMenuItem(title: "Open Panel…", action: #selector(openPanel), keyEquivalent: ",")
+        panelItem.target = self
+        menu.addItem(panelItem)
         menu.addItem(NSMenuItem(title: "Quit", action: #selector(NSApp.terminate(_:)), keyEquivalent: "q"))
 
         NSMenu.popUpContextMenu(menu, with: event, for: pet.view)
@@ -1111,6 +1463,19 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    @objc func ctxDoAction(_ sender: NSMenuItem) {
+        guard let pet = menuTargetPet else { return }
+        switch sender.tag {
+        case 1: pet.brain.enter(.sleeping)
+        case 2: pet.brain.enter(.meowing)
+        case 3: pet.brain.enter(.yawning)
+        case 4: pet.brain.enter(.washing)
+        case 5: pet.brain.enter(.scratching)
+        case 6: pet.brain.enter(.zoomies)
+        default: break
+        }
+    }
+
     @objc func ctxRemovePet() {
         guard let pet = menuTargetPet, pets.count > 1,
               let idx = pets.firstIndex(where: { $0 === pet }) else { return }
@@ -1121,8 +1486,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     // MARK: - Settings
 
-    @objc func openSettings() {
-        settingsController.show()
+    @objc func openPanel() {
+        panelController.show()
     }
 
     func resizeAllPets() {
@@ -1184,7 +1549,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             }.sorted()
             if let first = dirs.first { return first }
         }
-        return folder
+        return ""  // no subfolders, GIFs are directly in the cat folder
     }
 }
 

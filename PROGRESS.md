@@ -39,9 +39,29 @@
 - [x] DMG appearance polish (icon positioning, custom window size)
 - [ ] Developer ID signing + notarization (requires Apple Developer account)
 
-## Phase 5: Polish & Extras
+## Phase 5: Polish & Extras ✅
 - [x] Multi-monitor support (per-pet screen detection, cross-screen walking)
 - [x] Cat naming (hover tooltip, right-click rename, persisted)
-- [x] Settings window (scale, speed, gravity, activity level sliders)
+- [x] Pixel cat menu bar icon (from Kittens pack GIF, template image)
+- [x] Cat breed display names (Gray, Silver, Black, Orange, etc.)
+- [x] Fix Cat 8-13 not loading (no subfolder variant support)
+- [x] Summon All Cats (⌘S, bring all cats to mouse position)
+
+## Phase 6: Main Panel GUI ✅
+- [x] Unified panel window (Open Panel ⌘,)
+- [x] My Cats list (pixel thumbnails, name, breed, rename/delete)
+- [x] Add a Cat grid (13 breeds with pixel art previews, click to add)
+- [x] Click cat in list → select → right grid switches to "Change Breed" mode
+- [x] Settings integrated (scale, speed, gravity, activity sliders)
+- [x] Replaced standalone Settings window
+
+## Phase 6.5: UX Polish ✅
+- [x] Right-click "Do…" submenu (Sleep, Meow, Yawn, Wash, Scratch, Zoomies)
+- [x] Right-click "Open Panel…" shortcut
+- [x] Panel UI alignment and spacing fixes
+- [x] Codex review fixes (icon path, menu fallback)
+
+## Backlog
 - [ ] Sound effects (meow/purr with volume control)
 - [ ] Seasonal behaviors
+- [ ] Developer ID signing + notarization (requires Apple Developer account)

@@ -7,7 +7,8 @@ A macOS desktop pet app powered by pixel art kittens from the [Sprout Lands](htt
 ## Features
 
 **Cats**
-- 13 cat breeds with multiple color variants each
+- 13 breeds: Gray, Silver, Black, Orange, Ash, Tuxedo, Chocolate, Cream, White, Siamese, Peach, Brown, Lilac
+- Breeds 1-7 have multiple color variants
 - Unlimited cats on screen simultaneously, each with independent behavior
 - Give your cats custom names (hover to see, right-click to rename)
 
@@ -25,16 +26,20 @@ A macOS desktop pet app powered by pixel art kittens from the [Sprout Lands](htt
 - **Drag** to pick up and move your cat
 - **Click** to poke (50% meow, 30% hiss, 20% stand up)
 - **Long press** (>1s) to pet (cat washes contentedly, yawns when you let go)
+- **Right-click** context menu: choose breed, rename, command actions (sleep, zoomies, etc.)
 - Cats occasionally follow your mouse cursor, then swat at it
 
-**Settings**
-- Adjustable size (3x-10x pixel scale)
-- Walk speed, gravity strength, activity level sliders
+**Main Panel (⌘,)**
+- Visual cat breed picker with pixel art thumbnails (click to add)
+- Select a cat in the list, then click a breed to change it
+- Manage all your cats: rename, delete, summon
+- Settings: adjustable size, walk speed, gravity, activity level
 - All preferences saved automatically across restarts
 
 **System**
-- Menu bar app (no dock icon)
+- Pixel cat menu bar icon
 - Multi-monitor support: cats detect which screen they're on, walk between screens
+- Summon All Cats (⌘S): bring everyone back to your cursor
 - Launch at login option
 - Check for updates via GitHub Releases
 - Universal binary (Intel + Apple Silicon)
@@ -68,7 +73,7 @@ Right-click the app -> Open -> Click "Open" in the dialog.
 | Hold >1s | Pet the cat |
 | Right-click | Context menu (choose cat, rename, remove) |
 | Hover | Show cat's name |
-| Menu bar | Add/remove cats, settings, check for updates |
+| Menu bar (⌘,) | Open panel: manage cats, settings, check for updates |
 
 ## Build from Source
 
