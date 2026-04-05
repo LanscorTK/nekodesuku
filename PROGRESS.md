@@ -19,7 +19,7 @@
 - [x] Mouse follow (20% chance, 8-dir walk toward cursor, paw_att on arrival)
 - [x] Petting (hold >1s → wash_lie loop, release → yawn transition)
 - [x] Random events: zoomies, chase bug (walk→paw→eat), stretch (hind_legs→yawn)
-- [ ] Edge climbing (deferred to later phase)
+- [x] Edge climbing (20% chance at screen edge → climb up → walk top → fall)
 
 ## Phase 4: App Packaging ✅
 - [x] `.app` bundle structure (bundle.sh)

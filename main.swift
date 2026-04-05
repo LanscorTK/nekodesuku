@@ -123,6 +123,7 @@ enum PetState {
     case clickReact, petting
     case followMouse, pawAttack
     case zoomies, chaseBug, stretch
+    case climbEdge, walkTop
 }
 
 struct Movement {
@@ -142,6 +143,7 @@ class PetBrain {
     // Mouse follow
     var mousePos: NSPoint = .zero
     var petPos: NSPoint = .zero
+    var screenMaxY: CGFloat = 0
     var followDirTime: TimeInterval = 0
     var followDir: String = "right"
 
@@ -260,8 +262,17 @@ class PetBrain {
             eventPhase = 0
             stateDuration = 99
             setAnim("on_hind_legs")
+        case .climbEdge:
+            stateDuration = 99  // transition triggered by position
+            setAnim("walk_up")
+        case .walkTop:
+            stateDuration = .random(in: 3...7)
+            facingRight = Bool.random()
+            setAnim(facingRight ? "walk_r" : "walk_l")
         }
     }
+
+    func setAnimPublic(_ key: String) { setAnim(key) }
 
     private func setAnim(_ key: String) {
         if let a = anims[key] { a.reset(); currentAnim = a; return }
@@ -397,6 +408,18 @@ class PetBrain {
             default:
                 if currentAnim?.completedOnce == true { enter(.sitIdle) }
             }
+        case .climbEdge:
+            if transitionDelay <= 0 {
+                move.dy = walkSpeed * CGFloat(dt)
+            }
+            if petPos.y >= screenMaxY - Config.windowSize / 2 {
+                enter(.walkTop)
+            }
+        case .walkTop:
+            if transitionDelay <= 0 {
+                move.dx = facingRight ? walkSpeed * CGFloat(dt) : -walkSpeed * CGFloat(dt)
+            }
+            if stateTime >= stateDuration { enter(.sitIdle) }
         }
         return move
     }
@@ -568,26 +591,27 @@ class PetInstance {
             }
         }
 
+        // Detect which screen this pet is on
+        let petCenter = NSPoint(x: window.frame.midX, y: window.frame.midY)
+        let screenBounds = (NSScreen.screens.first { $0.frame.contains(petCenter) }
+                            ?? NSScreen.main)?.visibleFrame ?? .zero
+
         // Feed positions to brain
         brain.mousePos = NSEvent.mouseLocation
         brain.petPos = NSPoint(x: window.frame.origin.x + Config.windowSize / 2,
                                y: window.frame.origin.y + Config.windowSize / 2)
+        brain.screenMaxY = screenBounds.maxY
 
         let move = brain.update(dt: dt)
 
         if !view.isDragging {
             var origin = window.frame.origin
 
-            // Detect which screen this pet is on
-            let petCenter = NSPoint(x: window.frame.midX, y: window.frame.midY)
-            let screenBounds = (NSScreen.screens.first { $0.frame.contains(petCenter) }
-                                ?? NSScreen.main)?.visibleFrame ?? .zero
-
             // Gravity (disabled during airborne states or when caught)
             let bottomY = screenBounds.minY
             let noGravityState: Bool = {
                 switch brain.state {
-                case .followMouse, .chaseBug: return true
+                case .followMouse, .chaseBug, .climbEdge, .walkTop: return true
                 default: return false
                 }
             }()
@@ -610,9 +634,34 @@ class PetInstance {
             if origin.y < minY { origin.y = minY }
             if origin.y > maxY { origin.y = maxY }
 
-            // Edge bounce only at outermost edges
-            if case .walkLeft = brain.state, origin.x <= minX { brain.enter(.walkRight) }
-            if case .walkRight = brain.state, origin.x >= maxX { brain.enter(.walkLeft) }
+            // Edge climbing: lock position to edge
+            if case .climbEdge = brain.state {
+                origin.x = brain.facingRight ? maxX : minX
+            }
+            if case .walkTop = brain.state {
+                origin.y = maxY
+                // Bounce at screen edges while on top
+                if origin.x <= minX { brain.facingRight = true; brain.setAnimPublic(brain.facingRight ? "walk_r" : "walk_l") }
+                if origin.x >= maxX { brain.facingRight = false; brain.setAnimPublic(brain.facingRight ? "walk_r" : "walk_l") }
+            }
+
+            // Edge bounce / climb trigger
+            if case .walkLeft = brain.state, origin.x <= minX {
+                if Double.random(in: 0...1) < 0.2 {
+                    brain.facingRight = false
+                    brain.enter(.climbEdge)
+                } else {
+                    brain.enter(.walkRight)
+                }
+            }
+            if case .walkRight = brain.state, origin.x >= maxX {
+                if Double.random(in: 0...1) < 0.2 {
+                    brain.facingRight = true
+                    brain.enter(.climbEdge)
+                } else {
+                    brain.enter(.walkLeft)
+                }
+            }
 
             window.setFrameOrigin(origin)
         }
