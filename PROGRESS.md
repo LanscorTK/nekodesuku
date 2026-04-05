@@ -21,12 +21,12 @@
 - [x] Random events: zoomies, chase bug (walk→paw→eat), stretch (hind_legs→yawn)
 - [ ] Edge climbing (deferred to later phase)
 
-## Phase 4: App Packaging
-- [ ] `.app` bundle structure
-- [ ] Bundle Kittens pack assets into Resources
-- [ ] App icon from pixel cat sprites
-- [ ] Launch at login option
-- [ ] DMG / zip packaging
+## Phase 4: App Packaging ✅
+- [x] `.app` bundle structure (bundle.sh)
+- [x] Bundle Kittens pack assets into Resources (GIF-only rsync)
+- [x] App icon from pixel cat sprites (make_icon.swift)
+- [x] Launch at login option (SMAppService, menu bar toggle)
+- [x] DMG / zip packaging (make_dmg.sh)
 
 ## Phase 5: Polish & Extras
 - [ ] Settings window (scale, speed, behavior tuning)

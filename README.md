@@ -6,14 +6,33 @@ A macOS desktop pet app powered by pixel art kittens.
 
 ## Requirements
 
-- macOS 14+
+- macOS 13+
 - Swift 5.9+ (Xcode Command Line Tools)
 - [Kittens pack](https://cupnooble.itch.io/sprout-lands-asset-pack) assets
 
-## Build & Run
+## Install (App Bundle)
 
 ```bash
-# Build
+# Build .app bundle (auto-detects Kittens pack in ~/Downloads)
+bash bundle.sh
+
+# Or specify the asset path
+bash bundle.sh "/path/to/Kittens pack"
+
+# Launch
+open NekoDeskuToppu.app
+```
+
+To create a distributable DMG/zip:
+
+```bash
+bash make_dmg.sh
+```
+
+## Development
+
+```bash
+# Build bare binary
 bash build.sh
 
 # Run (auto-detects Kittens pack in ~/Downloads)
@@ -21,6 +40,14 @@ bash run.sh
 
 # Or run manually with a custom path
 ./NekoDeskuToppu "/path/to/Kittens pack"
+```
+
+## App Icon
+
+To regenerate the app icon from sprites:
+
+```bash
+swift make_icon.swift
 ```
 
 ## Usage

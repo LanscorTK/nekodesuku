@@ -1,5 +1,6 @@
 import Cocoa
 import ImageIO
+import ServiceManagement
 
 // ============================================================================
 // MARK: - Configuration
@@ -666,7 +667,29 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         menu.addItem(.separator())
+
+        if Bundle.main.bundlePath.hasSuffix(".app") {
+            let loginItem = NSMenuItem(title: "Launch at Login",
+                                       action: #selector(toggleLaunchAtLogin),
+                                       keyEquivalent: "")
+            loginItem.target = self
+            loginItem.state = SMAppService.mainApp.status == .enabled ? .on : .off
+            menu.addItem(loginItem)
+        }
+
         menu.addItem(NSMenuItem(title: "Quit", action: #selector(NSApp.terminate(_:)), keyEquivalent: "q"))
+    }
+
+    @objc func toggleLaunchAtLogin() {
+        do {
+            if SMAppService.mainApp.status == .enabled {
+                try SMAppService.mainApp.unregister()
+            } else {
+                try SMAppService.mainApp.register()
+            }
+        } catch {
+            print("Launch at login error: \(error)")
+        }
     }
 
     @objc func addRandomPet() {
@@ -795,15 +818,25 @@ extension AppDelegate: NSMenuDelegate {
 // MARK: - Main
 // ============================================================================
 
-if CommandLine.arguments.count > 1 {
-    Config.packPath = CommandLine.arguments[1]
-} else {
+func resolvePackPath() -> String {
+    let fm = FileManager.default
+    // 1. CLI argument
+    if CommandLine.arguments.count > 1 {
+        return CommandLine.arguments[1]
+    }
+    // 2. .app bundle Resources
+    if Bundle.main.bundlePath.hasSuffix(".app"),
+       let resPath = Bundle.main.resourcePath {
+        let bundled = resPath + "/Kittens pack"
+        if fm.fileExists(atPath: bundled) { return bundled }
+    }
+    // 3. Auto-detect: next to executable, then ~/Downloads
     let execDir = (CommandLine.arguments[0] as NSString).deletingLastPathComponent
     let candidate = execDir + "/Kittens pack"
-    Config.packPath = FileManager.default.fileExists(atPath: candidate)
-        ? candidate
-        : NSHomeDirectory() + "/Downloads/Kittens pack"
+    if fm.fileExists(atPath: candidate) { return candidate }
+    return NSHomeDirectory() + "/Downloads/Kittens pack"
 }
+Config.packPath = resolvePackPath()
 
 let app = NSApplication.shared
 let delegate = AppDelegate()

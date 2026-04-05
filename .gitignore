@@ -3,3 +3,8 @@
 *.swp
 NekoDeskuToppu
 .build/
+NekoDeskuToppu.app/
+*.dmg
+*.zip
+*.iconset/
+dmg_staging/
