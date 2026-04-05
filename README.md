@@ -1,35 +1,78 @@
 # NekoDeskuToppu
 
-A macOS desktop pet app powered by pixel art kittens.
+A macOS desktop pet app powered by pixel art kittens from the [Sprout Lands](https://cupnooble.itch.io/sprout-lands-asset-pack) asset pack.
 
-16x16 sprite cats live on your screen — walking, sleeping, meowing, and being adorable.
+16x16 sprite cats live on your screen — walking, sleeping, climbing walls, and being adorable.
 
-## Requirements
+## Features
 
+**Cats**
+- 13 cat breeds with multiple color variants each
+- Unlimited cats on screen simultaneously, each with independent behavior
+- Give your cats custom names (hover to see, right-click to rename)
+
+**Behaviors**
+- Idle sitting with subtle breathing animation
+- Walking left/right with smooth state transitions
+- Sleeping (8-15 seconds, sometimes yawns on waking)
+- Meowing, yawning, washing, scratching
+- Edge climbing: cats walk to screen edge, climb up the wall, stroll along the top, then jump down
+- Zoomies: sudden back-and-forth dashing at 2x speed
+- Chase bug: walk toward an imaginary bug, swat it, eat it
+- Stretching: stand on hind legs, then yawn
+
+**Interactions**
+- **Drag** to pick up and move your cat
+- **Click** to poke (50% meow, 30% hiss, 20% stand up)
+- **Long press** (>1s) to pet (cat washes contentedly, yawns when you let go)
+- Cats occasionally follow your mouse cursor, then swat at it
+
+**Settings**
+- Adjustable size (3x-10x pixel scale)
+- Walk speed, gravity strength, activity level sliders
+- All preferences saved automatically across restarts
+
+**System**
+- Menu bar app (no dock icon)
+- Multi-monitor support: cats detect which screen they're on, walk between screens
+- Launch at login option
+- Check for updates via GitHub Releases
+- Universal binary (Intel + Apple Silicon)
 - macOS 13+
-- Swift 5.9+ (Xcode Command Line Tools)
-- [Kittens pack](https://cupnooble.itch.io/sprout-lands-asset-pack) assets
 
 ## Download & Install
 
-1. 从 [Releases](../../releases) 页面下载最新的 `NekoDeskuToppu.dmg`
-2. 打开 DMG，将 **NekoDeskuToppu** 拖入 **Applications**
-3. 首次打开需要解除 macOS 安全限制（因为没有 Apple 开发者签名）：
+1. Download `NekoDeskuToppu.dmg` from [Releases](../../releases)
+2. Open the DMG, drag **NekoDeskuToppu** into **Applications**
+3. First launch requires bypassing macOS Gatekeeper (unsigned app):
 
-**方法一（推荐）：**
+**Option A (recommended):**
 
 ```bash
 xattr -cr /Applications/NekoDeskuToppu.app
 ```
 
-然后双击打开即可。
+Then double-click to open.
 
-**方法二：**
-右键点击 app → 选择「打开」→ 在弹出的对话框中再次点击「打开」。
+**Option B:**
+Right-click the app -> Open -> Click "Open" in the dialog.
 
-> 这是 macOS 对未签名 app 的正常安全提示，只需操作一次。
+> This is a standard macOS security prompt for unsigned apps. You only need to do this once.
+
+## Usage
+
+| Action | Effect |
+|--------|--------|
+| Drag | Pick up and move the cat |
+| Click | Poke (meow / hiss / stand up) |
+| Hold >1s | Pet the cat |
+| Right-click | Context menu (choose cat, rename, remove) |
+| Hover | Show cat's name |
+| Menu bar | Add/remove cats, settings, check for updates |
 
 ## Build from Source
+
+Requires macOS 13+, Swift 5.9+ (Xcode Command Line Tools), and the [Kittens pack](https://cupnooble.itch.io/sprout-lands-asset-pack) assets.
 
 ```bash
 # Build .app bundle (auto-detects Kittens pack in ~/Downloads)
@@ -48,36 +91,19 @@ To create a distributable DMG/zip:
 bash make_dmg.sh
 ```
 
-## Development
+### Development
 
 ```bash
-# Build bare binary
-bash build.sh
-
-# Run (auto-detects Kittens pack in ~/Downloads)
-bash run.sh
-
-# Or run manually with a custom path
-./NekoDeskuToppu "/path/to/Kittens pack"
+bash build.sh    # Build bare binary
+bash run.sh      # Auto-detect assets & run
 ```
 
-## App Icon
-
-To regenerate the app icon from sprites:
+### Regenerate App Icon
 
 ```bash
 swift make_icon.swift
 ```
 
-## Usage
-
-- **Drag** the cat to move it around
-- **Click** to poke the cat (it'll meow, hiss, or stand up)
-- **Long press** (hold >1s) to pet the cat
-- **Right-click** to open the menu (choose cat, color variant, quit)
-- **Menu bar 🐱** to add/remove cats, change variants, check for updates
-- Cats walk, sleep, meow, wash, scratch, and occasionally go on zoomies
-
 ## Assets
 
-This app uses the "Kittens pack" pixel art assets. The pack is not included — please purchase it from the original creator.
+This app uses the "Kittens pack" pixel art assets by [Cup Nooble](https://cupnooble.itch.io/sprout-lands-asset-pack). The pack is not included in this repository.
