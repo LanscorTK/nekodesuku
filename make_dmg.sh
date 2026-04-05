@@ -18,14 +18,16 @@ mkdir "$STAGING"
 cp -R "$APP" "$STAGING/"
 ln -s /Applications "$STAGING/Applications"
 
-# Create DMG with custom window size
+# Create read-write DMG (hdiutil auto-appends .dmg)
+RW_DMG="NekoDeskuToppu_rw"
+rm -f "${RW_DMG}.dmg"
 hdiutil create -volname "$VOL_NAME" \
     -srcfolder "$STAGING" \
     -ov -format UDRW \
-    "${DMG}.rw"
+    "$RW_DMG"
 
 # Mount and configure appearance
-MOUNT_DIR=$(hdiutil attach -readwrite -noverify "${DMG}.rw" | grep "$VOL_NAME" | awk '{print $3}')
+MOUNT_DIR=$(hdiutil attach -readwrite -noverify "${RW_DMG}.dmg" | grep "$VOL_NAME" | awk '{print $3}')
 if [ -n "$MOUNT_DIR" ]; then
     # Set Finder window appearance via AppleScript
     osascript <<EOF
@@ -50,8 +52,8 @@ EOF
 fi
 
 # Convert to compressed read-only DMG
-hdiutil convert "${DMG}.rw" -format UDZO -o "$DMG"
-rm -f "${DMG}.rw"
+hdiutil convert "${RW_DMG}.dmg" -format UDZO -o "$DMG"
+rm -f "${RW_DMG}.dmg"
 
 rm -rf "$STAGING"
 
