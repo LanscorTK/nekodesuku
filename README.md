@@ -6,6 +6,8 @@ A macOS desktop pet app powered by pixel art kittens from the [Animated Pixel Ki
 
 Pixel cats live on your screen — walking, sleeping, climbing walls, and being adorable.
 
+![Interaction](assets/nekodesk_interaction.gif)
+
 ## Features
 
 **Cats**
@@ -38,6 +40,8 @@ Pixel cats live on your screen — walking, sleeping, climbing walls, and being 
 - Quick actions: + Random, Summon All, Remove All
 - Settings: adjustable size, walk speed, gravity, activity level
 - All preferences saved automatically across restarts
+
+![Panel](assets/panel.png)
 
 **System**
 - Pixel cat menu bar icon
