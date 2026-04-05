@@ -31,16 +31,16 @@ A macOS desktop pet app powered by pixel art kittens from the [Sprout Lands](htt
 
 **Main Panel (⌘,)**
 - Visual cat breed picker with pixel art thumbnails (click to add)
+- Color variant picker: click a breed with variants to see all color options
 - Select a cat in the list, then click a breed to change it
-- Manage all your cats: rename, delete, summon
+- Quick actions: + Random, Summon All, Remove All
 - Settings: adjustable size, walk speed, gravity, activity level
 - All preferences saved automatically across restarts
 
 **System**
 - Pixel cat menu bar icon
 - Multi-monitor support: cats detect which screen they're on, walk between screens
-- Summon All Cats (⌘S): bring everyone back to your cursor
-- Launch at login option
+- Summon All / Remove All from menu bar
 - Check for updates via GitHub Releases
 - Universal binary (Intel + Apple Silicon)
 - macOS 13+

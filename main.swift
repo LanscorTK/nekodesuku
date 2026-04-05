@@ -774,7 +774,9 @@ class MainPanelController {
     weak var appDelegate: AppDelegate?
     var catListView: NSView?
     var rightHeaderLabel: NSTextField?
+    var variantView: NSView?         // area below grid for variant buttons
     var selectedPetIndex: Int? = nil  // nil = add mode, Int = change breed mode
+    var pendingFolder: String? = nil  // breed clicked that has variants
 
     let winW: CGFloat = 560
     let winH: CGFloat = 500
@@ -813,9 +815,21 @@ class MainPanelController {
         root.addSubview(catScroll)
         catListView = catContent
 
-        let summonBtn = NSButton(title: "Summon All", target: self, action: #selector(summonAll))
-        summonBtn.frame = NSRect(x: 16, y: winH - topH - 4, width: 110, height: 28)
+        let btnY = winH - topH - 4
+        let addRandBtn = NSButton(title: "+ Random", target: self, action: #selector(addRandomCat))
+        addRandBtn.frame = NSRect(x: 16, y: btnY, width: 80, height: 28)
+        addRandBtn.font = NSFont.systemFont(ofSize: 11)
+        root.addSubview(addRandBtn)
+
+        let summonBtn = NSButton(title: "Summon", target: self, action: #selector(summonAll))
+        summonBtn.frame = NSRect(x: 100, y: btnY, width: 70, height: 28)
+        summonBtn.font = NSFont.systemFont(ofSize: 11)
         root.addSubview(summonBtn)
+
+        let removeAllBtn = NSButton(title: "Rm All", target: self, action: #selector(removeAllCats))
+        removeAllBtn.frame = NSRect(x: 174, y: btnY, width: 62, height: 28)
+        removeAllBtn.font = NSFont.systemFont(ofSize: 11)
+        root.addSubview(removeAllBtn)
 
         // === Vertical divider ===
         let vDiv = NSBox(frame: NSRect(x: leftW, y: winH - topH, width: 1, height: topH - 10))
@@ -830,6 +844,11 @@ class MainPanelController {
         rightHeaderLabel = rHeader
 
         buildCatGrid(in: root)
+
+        // === Variant picker area (below grid, right column) ===
+        let varArea = NSView(frame: NSRect(x: leftW + 10, y: winH - topH + 5, width: winW - leftW - 20, height: 50))
+        root.addSubview(varArea)
+        variantView = varArea
 
         // === Horizontal divider ===
         let hDiv = NSBox(frame: NSRect(x: 10, y: winH - topH - 10, width: winW - 20, height: 1))
@@ -859,7 +878,7 @@ class MainPanelController {
         container.subviews.removeAll()
 
         guard let pets = appDelegate?.pets else { return }
-        let rowH: CGFloat = 65
+        let rowH: CGFloat = 72
         let contentW = container.enclosingScrollView?.frame.width ?? 240
         let totalH = max(CGFloat(pets.count) * rowH, container.enclosingScrollView?.frame.height ?? 200)
         container.frame = NSRect(x: 0, y: 0, width: contentW, height: totalH)
@@ -927,9 +946,9 @@ class MainPanelController {
                 row.addSubview(delBtn)
             }
 
-            // Bottom separator
-            if i < pets.count - 1 {
-                let sep = NSBox(frame: NSRect(x: 8, y: 0, width: contentW - 16, height: 1))
+            // Top separator (between rows)
+            if i > 0 {
+                let sep = NSBox(frame: NSRect(x: 8, y: rowH - 1, width: contentW - 16, height: 1))
                 sep.boxType = .separator
                 row.addSubview(sep)
             }
@@ -956,7 +975,7 @@ class MainPanelController {
         let cellW: CGFloat = 54
         let cellH: CGFloat = 72
         let gridX: CGFloat = leftW + 14
-        let gridTopY: CGFloat = winH - 70
+        let gridTopY: CGFloat = winH - 85
 
         for c in 1...13 {
             let col = (c - 1) % cols
@@ -1049,19 +1068,91 @@ class MainPanelController {
 
     @objc func gridCatClicked(_ sender: NSButton) {
         let folder = "Cat \(sender.tag)"
-        let variant = appDelegate?.findFirstVariant(folder: folder) ?? ""
 
-        if let idx = selectedPetIndex, let pets = appDelegate?.pets, idx < pets.count {
-            // Change breed mode
-            pets[idx].changeCat(folder: folder, variant: variant)
-            appDelegate?.savePets()
-            rebuildCatList()
+        // Check if this breed has variants
+        let catDir = "\(Config.packPath)/\(folder)"
+        let variants: [String] = {
+            guard let items = try? FileManager.default.contentsOfDirectory(atPath: catDir) else { return [] }
+            return items.filter { name in
+                var isDir: ObjCBool = false
+                FileManager.default.fileExists(atPath: "\(catDir)/\(name)", isDirectory: &isDir)
+                return isDir.boolValue
+            }.sorted()
+        }()
+
+        if variants.count > 1 {
+            // Has variants — show variant picker
+            pendingFolder = folder
+            showVariants(folder: folder, variants: variants)
         } else {
-            // Add mode
-            appDelegate?.addPet(catFolder: folder, catVariant: variant)
-            appDelegate?.savePets()
-            rebuildCatList()
+            // No variants — directly add/change
+            let variant = variants.first ?? ""
+            applyBreedSelection(folder: folder, variant: variant)
         }
+    }
+
+    func showVariants(folder: String, variants: [String]) {
+        guard let container = variantView else { return }
+        container.subviews.removeAll()
+
+        let scrollView = NSScrollView(frame: container.bounds)
+        scrollView.hasHorizontalScroller = true
+        scrollView.hasVerticalScroller = false
+        scrollView.drawsBackground = false
+        scrollView.autohidesScrollers = true
+
+        let cellW: CGFloat = 42
+        let contentW = max(CGFloat(variants.count) * cellW + 8, scrollView.frame.width)
+        let content = NSView(frame: NSRect(x: 0, y: 0, width: contentW, height: 46))
+
+        for (i, v) in variants.enumerated() {
+            let x: CGFloat = 4 + CGFloat(i) * cellW
+            let gifPath = gifPathForCat(folder: folder, variant: v)
+            let btn = NSButton(frame: NSRect(x: x, y: 6, width: 36, height: 36))
+            btn.bezelStyle = .regularSquare
+            btn.isBordered = true
+            if let thumb = extractThumbnail(gifPath: gifPath, size: 30) {
+                btn.image = thumb
+                btn.imagePosition = .imageOnly
+                btn.imageScaling = .scaleNone
+            } else {
+                btn.title = String(v.suffix(3))
+                btn.font = NSFont.systemFont(ofSize: 8)
+            }
+            btn.tag = i
+            btn.target = self
+            btn.action = #selector(variantClicked(_:))
+            btn.toolTip = v
+            content.addSubview(btn)
+        }
+
+        scrollView.documentView = content
+        container.addSubview(scrollView)
+    }
+
+    @objc func variantClicked(_ sender: NSButton) {
+        guard let folder = pendingFolder else { return }
+        let catDir = "\(Config.packPath)/\(folder)"
+        guard let items = try? FileManager.default.contentsOfDirectory(atPath: catDir) else { return }
+        let variants = items.filter { name in
+            var isDir: ObjCBool = false
+            FileManager.default.fileExists(atPath: "\(catDir)/\(name)", isDirectory: &isDir)
+            return isDir.boolValue
+        }.sorted()
+        guard sender.tag < variants.count else { return }
+        applyBreedSelection(folder: folder, variant: variants[sender.tag])
+    }
+
+    func applyBreedSelection(folder: String, variant: String) {
+        if let idx = selectedPetIndex, let pets = appDelegate?.pets, idx < pets.count {
+            pets[idx].changeCat(folder: folder, variant: variant)
+        } else {
+            appDelegate?.addPet(catFolder: folder, catVariant: variant)
+        }
+        appDelegate?.savePets()
+        pendingFolder = nil
+        variantView?.subviews.removeAll()
+        rebuildCatList()
     }
 
     @objc func renameCat(_ sender: NSButton) {
@@ -1097,8 +1188,23 @@ class MainPanelController {
         rebuildCatList()
     }
 
+    @objc func addRandomCat() {
+        appDelegate?.addRandomPet()
+        rebuildCatList()
+    }
+
     @objc func summonAll() {
         appDelegate?.summonAllPets()
+    }
+
+    @objc func removeAllCats() {
+        guard let delegate = appDelegate, delegate.pets.count > 1 else { return }
+        while delegate.pets.count > 1 {
+            delegate.pets.removeLast().close()
+        }
+        selectedPetIndex = nil
+        delegate.savePets()
+        rebuildCatList()
     }
 
     // MARK: Settings Actions
@@ -1223,6 +1329,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             let rmItem = NSMenuItem(title: "Remove Last Cat", action: #selector(removeLastPet), keyEquivalent: "")
             rmItem.target = self
             menu.addItem(rmItem)
+
+            let rmAllItem = NSMenuItem(title: "Remove All Cats", action: #selector(removeAllPets), keyEquivalent: "")
+            rmAllItem.target = self
+            menu.addItem(rmAllItem)
         }
 
         menu.addItem(.separator())
@@ -1245,14 +1355,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         menu.addItem(.separator())
 
-        if Bundle.main.bundlePath.hasSuffix(".app") {
-            let loginItem = NSMenuItem(title: "Launch at Login",
-                                       action: #selector(toggleLaunchAtLogin),
-                                       keyEquivalent: "")
-            loginItem.target = self
-            loginItem.state = SMAppService.mainApp.status == .enabled ? .on : .off
-            menu.addItem(loginItem)
-        }
+
 
         let panelItem = NSMenuItem(title: "Open Panel…", action: #selector(openPanel), keyEquivalent: ",")
         panelItem.target = self
@@ -1343,6 +1446,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     @objc func removeLastPet() {
         guard pets.count > 1 else { return }
         pets.removeLast().close()
+        savePets()
+    }
+
+    @objc func removeAllPets() {
+        guard pets.count > 1 else { return }
+        while pets.count > 1 { pets.removeLast().close() }
         savePets()
     }
 

@@ -59,6 +59,10 @@
 - [x] Right-click "Do…" submenu (Sleep, Meow, Yawn, Wash, Scratch, Zoomies)
 - [x] Right-click "Open Panel…" shortcut
 - [x] Panel UI alignment and spacing fixes
+- [x] Variant color picker in panel (click breed → shows all color variants)
+- [x] Panel buttons: + Random, Summon, Rm All
+- [x] Menu bar: Remove All Cats option
+- [x] Removed Launch at Login from menu
 - [x] Codex review fixes (icon path, menu fallback)
 
 ## Backlog
