@@ -1,8 +1,10 @@
 # NekoDeskuToppu
 
+![NekoDeskuToppu](assets/banner.png)
+
 A macOS desktop pet app powered by pixel art kittens from the [Animated Pixel Kittens](https://last-tick.itch.io/animated-pixel-kittens-cats-32x32) asset pack by Last Tick.
 
-16x16 sprite cats live on your screen — walking, sleeping, climbing walls, and being adorable.
+Pixel cats live on your screen — walking, sleeping, climbing walls, and being adorable.
 
 ## Features
 
