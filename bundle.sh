@@ -26,9 +26,12 @@ fi
 
 echo "Using assets: $PACK"
 
-# Compile
-echo "Compiling..."
-swiftc -O -o NekoDeskuToppu main.swift
+# Compile (universal binary)
+echo "Compiling (arm64 + x86_64)..."
+swiftc -O -target arm64-apple-macos13 -o NekoDeskuToppu-arm64 main.swift
+swiftc -O -target x86_64-apple-macos13 -o NekoDeskuToppu-x86_64 main.swift
+lipo -create NekoDeskuToppu-arm64 NekoDeskuToppu-x86_64 -output NekoDeskuToppu
+rm NekoDeskuToppu-arm64 NekoDeskuToppu-x86_64
 
 # Build .app bundle
 echo "Building $APP..."
@@ -53,9 +56,15 @@ rsync -a \
     --exclude='.DS_Store' \
     "$PACK/" "$APP/Contents/Resources/Kittens pack/"
 
-# Ad-hoc code sign
-echo "Signing..."
-codesign --force --deep --sign - "$APP"
+# Code sign (Developer ID if available, ad-hoc otherwise)
+SIGN_IDENTITY="${CODESIGN_IDENTITY:--}"
+echo "Signing with: $SIGN_IDENTITY"
+if [ "$SIGN_IDENTITY" != "-" ]; then
+    codesign --force --options runtime --sign "$SIGN_IDENTITY" \
+        --entitlements entitlements.plist "$APP"
+else
+    codesign --force --deep --sign - "$APP"
+fi
 
 # Report
 SIZE=$(du -sh "$APP" | cut -f1)

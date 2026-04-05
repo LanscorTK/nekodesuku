@@ -10,7 +10,26 @@ A macOS desktop pet app powered by pixel art kittens.
 - Swift 5.9+ (Xcode Command Line Tools)
 - [Kittens pack](https://cupnooble.itch.io/sprout-lands-asset-pack) assets
 
-## Install (App Bundle)
+## Download & Install
+
+1. 从 [Releases](../../releases) 页面下载最新的 `NekoDeskuToppu.dmg`
+2. 打开 DMG，将 **NekoDeskuToppu** 拖入 **Applications**
+3. 首次打开需要解除 macOS 安全限制（因为没有 Apple 开发者签名）：
+
+**方法一（推荐）：**
+
+```bash
+xattr -cr /Applications/NekoDeskuToppu.app
+```
+
+然后双击打开即可。
+
+**方法二：**
+右键点击 app → 选择「打开」→ 在弹出的对话框中再次点击「打开」。
+
+> 这是 macOS 对未签名 app 的正常安全提示，只需操作一次。
+
+## Build from Source
 
 ```bash
 # Build .app bundle (auto-detects Kittens pack in ~/Downloads)
@@ -53,8 +72,11 @@ swift make_icon.swift
 ## Usage
 
 - **Drag** the cat to move it around
+- **Click** to poke the cat (it'll meow, hiss, or stand up)
+- **Long press** (hold >1s) to pet the cat
 - **Right-click** to open the menu (choose cat, color variant, quit)
-- The cat walks along the bottom of your screen and randomly sits, sleeps, meows, yawns, washes, and scratches
+- **Menu bar 🐱** to add/remove cats, change variants, check for updates
+- Cats walk, sleep, meow, wash, scratch, and occasionally go on zoomies
 
 ## Assets
 

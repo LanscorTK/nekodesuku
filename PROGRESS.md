@@ -28,6 +28,17 @@
 - [x] Launch at login option (SMAppService, menu bar toggle)
 - [x] DMG / zip packaging (make_dmg.sh)
 
+## Phase 4.5: Distribution Readiness ✅
+- [x] Universal binary (ARM64 + x86_64 via lipo)
+- [x] App versioning (CFBundleShortVersionString 1.0.0, shown in menu)
+- [x] Settings persistence (UserDefaults: cat count, variants, colors survive restart)
+- [x] Check for Updates menu item (GitHub Releases API, no dependencies)
+- [x] Asset validation on startup (alert dialog if Kittens pack missing)
+- [x] Code signing scaffolding (entitlements.plist, CODESIGN_IDENTITY in bundle.sh)
+- [x] Notarization script (notarize.sh with credential placeholders)
+- [x] DMG appearance polish (icon positioning, custom window size)
+- [ ] Developer ID signing + notarization (requires Apple Developer account)
+
 ## Phase 5: Polish & Extras
 - [ ] Settings window (scale, speed, behavior tuning)
 - [ ] Cat naming (hover tooltip)

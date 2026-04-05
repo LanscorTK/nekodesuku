@@ -605,7 +605,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
         screenBounds = screen.visibleFrame
 
-        addPet(catFolder: "Cat 1", catVariant: "Cat 1")
+        restorePets()
 
         if pets.isEmpty {
             print("No animations found. Check 'Kittens pack' path.")
@@ -677,6 +677,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             menu.addItem(loginItem)
         }
 
+        let updateItem = NSMenuItem(title: "Check for Updates…", action: #selector(checkForUpdates), keyEquivalent: "")
+        updateItem.target = self
+        menu.addItem(updateItem)
+
+        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "dev"
+        let versionItem = NSMenuItem(title: "NekoDeskuToppu v\(version)", action: nil, keyEquivalent: "")
+        versionItem.isEnabled = false
+        menu.addItem(versionItem)
+
         menu.addItem(NSMenuItem(title: "Quit", action: #selector(NSApp.terminate(_:)), keyEquivalent: "q"))
     }
 
@@ -692,15 +701,56 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    @objc func checkForUpdates() {
+        let repoURL = "https://api.github.com/repos/lanscortk/nekodesuku/releases/latest"
+        guard let url = URL(string: repoURL) else { return }
+        var req = URLRequest(url: url)
+        req.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
+        URLSession.shared.dataTask(with: req) { data, _, error in
+            DispatchQueue.main.async {
+                guard let data = data, error == nil,
+                      let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                      let tagName = json["tag_name"] as? String else {
+                    let alert = NSAlert()
+                    alert.messageText = "Update Check Failed"
+                    alert.informativeText = "Could not reach GitHub. Check your internet connection."
+                    alert.runModal()
+                    return
+                }
+                let remote = tagName.trimmingCharacters(in: CharacterSet(charactersIn: "v"))
+                let local = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0"
+                if remote.compare(local, options: .numeric) == .orderedDescending {
+                    let alert = NSAlert()
+                    alert.messageText = "Update Available"
+                    alert.informativeText = "Version \(remote) is available (you have \(local))."
+                    alert.addButton(withTitle: "Download")
+                    alert.addButton(withTitle: "Later")
+                    if alert.runModal() == .alertFirstButtonReturn,
+                       let htmlURL = json["html_url"] as? String,
+                       let dl = URL(string: htmlURL) {
+                        NSWorkspace.shared.open(dl)
+                    }
+                } else {
+                    let alert = NSAlert()
+                    alert.messageText = "You're Up to Date"
+                    alert.informativeText = "NekoDeskuToppu \(local) is the latest version."
+                    alert.runModal()
+                }
+            }
+        }.resume()
+    }
+
     @objc func addRandomPet() {
         let catNum = Int.random(in: 1...13)
         let folder = "Cat \(catNum)"
         addPet(catFolder: folder, catVariant: findFirstVariant(folder: folder))
+        savePets()
     }
 
     @objc func removeLastPet() {
         guard pets.count > 1 else { return }
         pets.removeLast().close()
+        savePets()
     }
 
     @objc func statusChangeCat(_ sender: NSMenuItem) {
@@ -709,6 +759,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         guard petIdx < pets.count else { return }
         let folder = "Cat \(catNum)"
         pets[petIdx].changeCat(folder: folder, variant: findFirstVariant(folder: folder))
+        savePets()
     }
 
     // MARK: - Per-Pet Context Menu
@@ -766,11 +817,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         guard let pet = menuTargetPet else { return }
         let folder = "Cat \(sender.tag)"
         pet.changeCat(folder: folder, variant: findFirstVariant(folder: folder))
+        savePets()
     }
 
     @objc func ctxPickVariant(_ sender: NSMenuItem) {
         guard let pet = menuTargetPet, let v = sender.representedObject as? String else { return }
         pet.changeCat(folder: pet.catFolder, variant: v)
+        savePets()
     }
 
     @objc func ctxRemovePet() {
@@ -778,6 +831,28 @@ class AppDelegate: NSObject, NSApplicationDelegate {
               let idx = pets.firstIndex(where: { $0 === pet }) else { return }
         pets.remove(at: idx)
         pet.close()
+        savePets()
+    }
+
+    // MARK: - Persistence
+
+    func savePets() {
+        let data = pets.map { ["folder": $0.catFolder, "variant": $0.catVariant] }
+        UserDefaults.standard.set(data, forKey: "savedPets")
+    }
+
+    func restorePets() {
+        if let saved = UserDefaults.standard.array(forKey: "savedPets") as? [[String: String]], !saved.isEmpty {
+            for entry in saved {
+                let folder = entry["folder"] ?? "Cat 1"
+                let variant = entry["variant"] ?? folder
+                addPet(catFolder: folder, catVariant: variant)
+            }
+        }
+        // Fall back to default if nothing loaded (first launch or stale saved data)
+        if pets.isEmpty {
+            addPet(catFolder: "Cat 1", catVariant: "Cat 1")
+        }
     }
 
     // MARK: - Pet Management
@@ -837,6 +912,19 @@ func resolvePackPath() -> String {
     return NSHomeDirectory() + "/Downloads/Kittens pack"
 }
 Config.packPath = resolvePackPath()
+
+// Validate assets exist
+let fm = FileManager.default
+if !fm.fileExists(atPath: Config.packPath) {
+    let app = NSApplication.shared
+    app.setActivationPolicy(.regular)
+    let alert = NSAlert()
+    alert.alertStyle = .critical
+    alert.messageText = "Assets Not Found"
+    alert.informativeText = "Could not find 'Kittens pack' at:\n\(Config.packPath)\n\nPlease place the Kittens pack next to the app or in ~/Downloads."
+    alert.runModal()
+    exit(1)
+}
 
 let app = NSApplication.shared
 let delegate = AppDelegate()
