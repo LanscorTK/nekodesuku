@@ -65,7 +65,26 @@
 - [x] Removed Launch at Login from menu
 - [x] Codex review fixes (icon path, menu fallback)
 
+## Phase 7: Window Awareness ✅
+- [x] WindowTracker (CGWindowListCopyWindowInfo, 0.5s refresh)
+- [x] Cats land on app window tops instead of only screen bottom
+- [x] Walk off window edge → fall to next surface
+- [x] Window moved/closed → cat falls naturally
+- [x] Settings toggle: Window Awareness on/off (persisted)
+
+## Phase 8: Auto-Sleep & Statistics ✅
+- [x] Auto-sleep: cats fall asleep after N minutes of no interaction (default 5m, configurable)
+- [x] Per-cat statistics: companion time, clicks, pettings, distance walked, sleep time
+- [x] Stats displayed in panel when cat is selected
+- [x] Stats auto-saved every 60s, persisted across restarts
+- [x] Settings tooltips on hover for all controls
+
 ## Backlog
+- [ ] Cat-to-cat interactions (paw_att, wash when near each other)
+- [ ] Feeding (drop treat from menu → cats run to eat)
+- [ ] Time awareness (cats sleep more at night)
+- [ ] Mouse curiosity (cat watches cursor, startled by fast movement)
+- [ ] Mood system (interaction frequency affects behavior)
 - [ ] Sound effects (meow/purr with volume control)
 - [ ] Seasonal behaviors
 - [ ] Developer ID signing + notarization (requires Apple Developer account)

@@ -37,13 +37,17 @@ Pixel cats live on your screen — walking, sleeping, climbing walls, and being 
 - Visual cat breed picker with pixel art thumbnails (click to add)
 - Color variant picker: click a breed with variants to see all color options
 - Select a cat in the list, then click a breed to change it
+- Per-cat statistics: companion time, clicks, pettings, distance, sleep time
 - Quick actions: + Random, Summon All, Remove All
-- Settings: adjustable size, walk speed, gravity, activity level
+- Settings: size, speed, gravity, activity, auto-sleep timer, window awareness
+- Tooltip hints on all settings (hover to learn what each does)
 - All preferences saved automatically across restarts
 
 ![Panel](assets/panel.png)
 
 **System**
+- Window awareness: cats stand on top of other app windows (toggle in settings)
+- Auto-sleep: cats fall asleep after idle (configurable, default 5 min)
 - Pixel cat menu bar icon
 - Multi-monitor support: cats detect which screen they're on, walk between screens
 - Summon All / Remove All from menu bar

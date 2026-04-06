@@ -12,6 +12,8 @@ struct Config {
     static var walkSpeed: CGFloat = 30
     static var gravitySpeed: CGFloat = 80
     static var activityLevel: Double = 1.0  // 0.0=calm, 1.0=normal, 2.0=hyperactive
+    static var windowAwareness: Bool = true
+    static var autoSleepMinutes: Double = 5.0  // 0 = disabled
     static var windowSize: CGFloat { 16.0 * scale }
 
     static let catNames: [String: String] = [
@@ -34,6 +36,8 @@ struct Config {
         d.set(Double(walkSpeed), forKey: "cfg_walkSpeed")
         d.set(Double(gravitySpeed), forKey: "cfg_gravity")
         d.set(activityLevel, forKey: "cfg_activity")
+        d.set(windowAwareness, forKey: "cfg_windowAwareness")
+        d.set(autoSleepMinutes, forKey: "cfg_autoSleep")
     }
 
     static func restore() {
@@ -43,6 +47,12 @@ struct Config {
             walkSpeed = CGFloat(d.double(forKey: "cfg_walkSpeed"))
             gravitySpeed = CGFloat(d.double(forKey: "cfg_gravity"))
             activityLevel = d.double(forKey: "cfg_activity")
+            if d.object(forKey: "cfg_windowAwareness") != nil {
+                windowAwareness = d.bool(forKey: "cfg_windowAwareness")
+            }
+            if d.object(forKey: "cfg_autoSleep") != nil {
+                autoSleepMinutes = d.double(forKey: "cfg_autoSleep")
+            }
         }
     }
 }
@@ -508,6 +518,7 @@ class PetView: NSView {
         isDragging = true
         wasDragged = false
         mouseDownTime = ProcessInfo.processInfo.systemUptime
+        (NSApp.delegate as? AppDelegate)?.lastInteractionTime = mouseDownTime
         let sLoc = window!.convertPoint(toScreen: e.locationInWindow)
         mouseDownPos = sLoc
         dragOffset = NSPoint(
@@ -533,8 +544,10 @@ class PetView: NSView {
             gravityEnabled = false
             if case .petting = instance?.brain.state {
                 instance?.brain.stopPetting()
+                instance?.stats.pettings += 1
             } else {
                 instance?.brain.triggerClickReact()
+                instance?.stats.clicks += 1
             }
         }
         isDragging = false
@@ -550,6 +563,34 @@ class PetView: NSView {
 // MARK: - Pet Instance
 // ============================================================================
 
+struct PetStats {
+    var clicks: Int = 0
+    var pettings: Int = 0
+    var zoomies: Int = 0
+    var climbCount: Int = 0
+    var totalDistance: CGFloat = 0
+    var sleepTime: TimeInterval = 0
+    var createdAt: TimeInterval = ProcessInfo.processInfo.systemUptime
+
+    func toDict() -> [String: Any] {
+        ["clicks": clicks, "pettings": pettings, "zoomies": zoomies,
+         "climbCount": climbCount, "totalDistance": Double(totalDistance),
+         "sleepTime": sleepTime, "createdAt": createdAt]
+    }
+
+    static func from(_ d: [String: Any]) -> PetStats {
+        var s = PetStats()
+        s.clicks = d["clicks"] as? Int ?? 0
+        s.pettings = d["pettings"] as? Int ?? 0
+        s.zoomies = d["zoomies"] as? Int ?? 0
+        s.climbCount = d["climbCount"] as? Int ?? 0
+        s.totalDistance = CGFloat(d["totalDistance"] as? Double ?? 0)
+        s.sleepTime = d["sleepTime"] as? TimeInterval ?? 0
+        s.createdAt = d["createdAt"] as? TimeInterval ?? ProcessInfo.processInfo.systemUptime
+        return s
+    }
+}
+
 class PetInstance {
     let window: NSWindow
     let view: PetView
@@ -559,6 +600,8 @@ class PetInstance {
     var petName: String
     var lastTick: TimeInterval
     var nameWindow: NSWindow?
+    var stats = PetStats()
+    var prevState: PetState = .sitIdle
 
     var catPath: String {
         if catVariant.isEmpty { return "\(Config.packPath)/\(catFolder)" }
@@ -625,7 +668,15 @@ class PetInstance {
             var origin = window.frame.origin
 
             // Gravity (disabled during airborne states or when caught)
-            let bottomY = screenBounds.minY
+            let bottomY: CGFloat
+            if Config.windowAwareness {
+                bottomY = (NSApp.delegate as? AppDelegate)?
+                    .windowTracker.landingSurface(petX: origin.x, petY: origin.y,
+                                                  petW: Config.windowSize, screenMinY: screenBounds.minY)
+                    ?? screenBounds.minY
+            } else {
+                bottomY = screenBounds.minY
+            }
             let noGravityState: Bool = {
                 switch brain.state {
                 case .followMouse, .chaseBug, .climbEdge, .walkTop: return true
@@ -638,6 +689,7 @@ class PetInstance {
 
             // Apply movement
             origin.x += move.dx
+            stats.totalDistance += abs(move.dx) + abs(move.dy)
             origin.y += move.dy
 
             // Clamp to total screen area (union of all screens)
@@ -681,6 +733,14 @@ class PetInstance {
             }
 
             window.setFrameOrigin(origin)
+        }
+
+        // Track stats
+        if case .sleeping = brain.state { stats.sleepTime += dt }
+        if brain.state != prevState {
+            if case .zoomies = brain.state { stats.zoomies += 1 }
+            if case .climbEdge = brain.state { stats.climbCount += 1 }
+            prevState = brain.state
         }
 
         view.breathOffset = move.breathOffset
@@ -775,6 +835,7 @@ class MainPanelController {
     var catListView: NSView?
     var rightHeaderLabel: NSTextField?
     var variantView: NSView?         // area below grid for variant buttons
+    var statsView: NSView?           // stats display area
     var selectedPetIndex: Int? = nil  // nil = add mode, Int = change breed mode
     var pendingFolder: String? = nil  // breed clicked that has variants
 
@@ -830,6 +891,11 @@ class MainPanelController {
         removeAllBtn.frame = NSRect(x: 174, y: btnY, width: 62, height: 28)
         removeAllBtn.font = NSFont.systemFont(ofSize: 11)
         root.addSubview(removeAllBtn)
+
+        // === Stats area (below buttons, left column) ===
+        let sArea = NSView(frame: NSRect(x: 10, y: winH - topH + 35, width: leftW - 15, height: 60))
+        root.addSubview(sArea)
+        statsView = sArea
 
         // === Vertical divider ===
         let vDiv = NSBox(frame: NSRect(x: leftW, y: winH - topH, width: 1, height: topH - 10))
@@ -957,6 +1023,36 @@ class MainPanelController {
         }
 
         updateRightHeader()
+        rebuildStats()
+    }
+
+    func rebuildStats() {
+        guard let container = statsView else { return }
+        container.subviews.removeAll()
+
+        guard let idx = selectedPetIndex, let pets = appDelegate?.pets, idx < pets.count else {
+            // No cat selected — show nothing
+            return
+        }
+        let s = pets[idx].stats
+        let uptime = ProcessInfo.processInfo.systemUptime - s.createdAt
+        let days = Int(uptime / 86400)
+        let hours = Int(uptime.truncatingRemainder(dividingBy: 86400) / 3600)
+        let distM = Int(s.totalDistance / 100)  // ~100px per "meter"
+        let sleepMin = Int(s.sleepTime / 60)
+
+        let lines = [
+            "Companion: \(days)d \(hours)h  |  Clicks: \(s.clicks)  |  Pets: \(s.pettings)",
+            "Walked: \(distM)m  |  Slept: \(sleepMin)m",
+        ]
+
+        for (i, line) in lines.enumerated() {
+            let lbl = NSTextField(labelWithString: line)
+            lbl.font = NSFont.monospacedDigitSystemFont(ofSize: 10, weight: .regular)
+            lbl.textColor = .secondaryLabelColor
+            lbl.frame = NSRect(x: 4, y: CGFloat(35 - i * 18), width: 240, height: 14)
+            container.addSubview(lbl)
+        }
     }
 
     func updateRightHeader() {
@@ -1020,6 +1116,13 @@ class MainPanelController {
 
     func buildSettings(in root: NSView, baseY: CGFloat) {
         var y = baseY
+        let tooltips: [String: String] = [
+            "Size": "Cat pixel scale (3x=tiny, 10x=huge)",
+            "Speed": "Walking speed in pixels per second",
+            "Gravity": "How fast cats fall down",
+            "Activity": "0=calm (mostly sleep), 2=hyperactive (lots of zoomies)",
+        ]
+
         let sliders: [(String, Double, Double, Double, Selector, String)] = [
             ("Size",     3, 10,  Double(Config.scale),        #selector(scaleChanged(_:)),    "%.0f"),
             ("Speed",   10, 80,  Double(Config.walkSpeed),    #selector(speedChanged(_:)),    "%.0f"),
@@ -1031,6 +1134,7 @@ class MainPanelController {
             let lbl = NSTextField(labelWithString: label)
             lbl.frame = NSRect(x: 20, y: y, width: 65, height: 20)
             lbl.font = NSFont.systemFont(ofSize: 11)
+            lbl.toolTip = tooltips[label]
             root.addSubview(lbl)
 
             let slider = NSSlider(value: val, minValue: min, maxValue: max,
@@ -1048,6 +1152,35 @@ class MainPanelController {
 
             y -= 28
         }
+
+        // Auto-sleep slider
+        let sleepLbl = NSTextField(labelWithString: "Auto Sleep")
+        sleepLbl.frame = NSRect(x: 20, y: y, width: 65, height: 20)
+        sleepLbl.font = NSFont.systemFont(ofSize: 11)
+        sleepLbl.toolTip = "Minutes of no interaction before all cats fall asleep (0=off)"
+        root.addSubview(sleepLbl)
+
+        let sleepSlider = NSSlider(value: Config.autoSleepMinutes, minValue: 0, maxValue: 30,
+                                   target: self, action: #selector(autoSleepChanged(_:)))
+        sleepSlider.frame = NSRect(x: 90, y: y, width: winW - 160, height: 20)
+        sleepSlider.tag = Int(y)
+        root.addSubview(sleepSlider)
+
+        let sleepVal = NSTextField(labelWithString: Config.autoSleepMinutes > 0 ? "\(Int(Config.autoSleepMinutes))m" : "Off")
+        sleepVal.frame = NSRect(x: winW - 60, y: y, width: 45, height: 20)
+        sleepVal.alignment = .right
+        sleepVal.font = NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .regular)
+        sleepVal.tag = 1000 + Int(y)
+        root.addSubview(sleepVal)
+        y -= 28
+
+        let winCheck = NSButton(checkboxWithTitle: "Window Awareness", target: self, action: #selector(windowAwarenessChanged(_:)))
+        winCheck.frame = NSRect(x: 20, y: y, width: 200, height: 20)
+        winCheck.state = Config.windowAwareness ? .on : .off
+        winCheck.font = NSFont.systemFont(ofSize: 11)
+        winCheck.toolTip = "Cats can stand on top of other app windows"
+        root.addSubview(winCheck)
+        y -= 28
 
         let resetBtn = NSButton(title: "Reset Defaults", target: self, action: #selector(resetDefaults(_:)))
         resetBtn.frame = NSRect(x: winW - 130, y: y - 2, width: 110, height: 24)
@@ -1241,16 +1374,85 @@ class MainPanelController {
         Config.save()
     }
 
+    @objc func autoSleepChanged(_ sender: NSSlider) {
+        Config.autoSleepMinutes = round(sender.doubleValue)
+        Config.save()
+        guard let view = sender.superview else { return }
+        if let label = view.viewWithTag(1000 + sender.tag) as? NSTextField {
+            label.stringValue = Config.autoSleepMinutes > 0 ? "\(Int(Config.autoSleepMinutes))m" : "Off"
+        }
+    }
+
+    @objc func windowAwarenessChanged(_ sender: NSButton) {
+        Config.windowAwareness = sender.state == .on
+        Config.save()
+    }
+
     @objc func resetDefaults(_ sender: Any) {
         Config.scale = 6.0
         Config.walkSpeed = 30
         Config.gravitySpeed = 80
         Config.activityLevel = 1.0
+        Config.windowAwareness = true
+        Config.autoSleepMinutes = 5.0
         Config.save()
         appDelegate?.resizeAllPets()
         window?.close()
         window = nil
         show()
+    }
+}
+
+// ============================================================================
+// MARK: - Window Tracker
+// ============================================================================
+
+class WindowTracker {
+    var windowRects: [NSRect] = []
+    private var lastUpdate: TimeInterval = 0
+    private let myPID = ProcessInfo.processInfo.processIdentifier
+
+    func update() {
+        let now = ProcessInfo.processInfo.systemUptime
+        guard now - lastUpdate > 0.5 else { return }
+        lastUpdate = now
+
+        guard let infoList = CGWindowListCopyWindowInfo(
+            [.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID
+        ) as? [[String: Any]] else { return }
+
+        let screenH = NSScreen.main?.frame.height ?? 0
+
+        windowRects = infoList.compactMap { info -> NSRect? in
+            guard let bounds = info[kCGWindowBounds as String] as? [String: Any],
+                  let alpha = info[kCGWindowAlpha as String] as? Double, alpha > 0.5,
+                  let layer = info[kCGWindowLayer as String] as? Int, layer == 0,
+                  let pid = info[kCGWindowOwnerPID as String] as? Int,
+                  pid != Int(myPID)
+            else { return nil }
+
+            guard let x = bounds["X"] as? CGFloat,
+                  let y = bounds["Y"] as? CGFloat,
+                  let w = bounds["Width"] as? CGFloat,
+                  let h = bounds["Height"] as? CGFloat,
+                  w > 50, h > 30  // skip tiny windows (tooltips, etc.)
+            else { return nil }
+
+            // Convert from top-left origin (CGWindow) to bottom-left origin (Cocoa)
+            return NSRect(x: x, y: screenH - y - h, width: w, height: h)
+        }
+    }
+
+    func landingSurface(petX: CGFloat, petY: CGFloat, petW: CGFloat, screenMinY: CGFloat) -> CGFloat {
+        var bestY = screenMinY
+        for win in windowRects {
+            let winTop = win.maxY
+            if winTop <= petY + 2 && winTop > bestY &&
+               petX + petW > win.minX && petX < win.maxX {
+                bestY = winTop
+            }
+        }
+        return bestY
     }
 }
 
@@ -1264,6 +1466,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     var statusItem: NSStatusItem!
     var menuTargetPet: PetInstance?
     let panelController = MainPanelController()
+    let windowTracker = WindowTracker()
+    var lastInteractionTime: TimeInterval = ProcessInfo.processInfo.systemUptime
+    var lastStatsSave: TimeInterval = 0
 
     func applicationDidFinishLaunching(_ n: Notification) {
         NSApp.setActivationPolicy(.accessory)
@@ -1273,6 +1478,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         Config.restore()
+        // Shorter tooltip delay
+        UserDefaults.standard.set(0.3, forKey: "NSInitialToolTipDelay")
         panelController.appDelegate = self
         restorePets()
 
@@ -1290,7 +1497,27 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func tick() {
+        windowTracker.update()
+
+        // Auto-sleep: if no interaction for N minutes, all cats sleep
+        if Config.autoSleepMinutes > 0 {
+            let idle = ProcessInfo.processInfo.systemUptime - lastInteractionTime
+            if idle > Config.autoSleepMinutes * 60 {
+                for pet in pets {
+                    if case .sleeping = pet.brain.state { } else {
+                        if case .petting = pet.brain.state { } else {
+                            pet.brain.enter(.sleeping)
+                        }
+                    }
+                }
+            }
+        }
+
         for pet in pets { pet.tick() }
+
+        // Auto-save stats every 60 seconds
+        let now = ProcessInfo.processInfo.systemUptime
+        if now - lastStatsSave > 60 { lastStatsSave = now; savePets() }
     }
 
     // MARK: - Status Bar
@@ -1614,17 +1841,23 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - Persistence
 
     func savePets() {
-        let data = pets.map { ["folder": $0.catFolder, "variant": $0.catVariant, "name": $0.petName] }
+        let data: [[String: Any]] = pets.map {
+            ["folder": $0.catFolder, "variant": $0.catVariant, "name": $0.petName,
+             "stats": $0.stats.toDict()]
+        }
         UserDefaults.standard.set(data, forKey: "savedPets")
     }
 
     func restorePets() {
-        if let saved = UserDefaults.standard.array(forKey: "savedPets") as? [[String: String]], !saved.isEmpty {
+        if let saved = UserDefaults.standard.array(forKey: "savedPets") as? [[String: Any]], !saved.isEmpty {
             for entry in saved {
-                let folder = entry["folder"] ?? "Cat 1"
-                let variant = entry["variant"] ?? folder
-                let name = entry["name"]
+                let folder = entry["folder"] as? String ?? "Cat 1"
+                let variant = entry["variant"] as? String ?? folder
+                let name = entry["name"] as? String
                 addPet(catFolder: folder, catVariant: variant, petName: name)
+                if let statsDict = entry["stats"] as? [String: Any] {
+                    pets.last?.stats = PetStats.from(statsDict)
+                }
             }
         }
         // Fall back to default if nothing loaded (first launch or stale saved data)
