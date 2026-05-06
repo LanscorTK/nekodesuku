@@ -28,8 +28,9 @@ echo "Using assets: $PACK"
 
 # Compile (universal binary)
 echo "Compiling (arm64 + x86_64)..."
-swiftc -O -target arm64-apple-macos13 -o NekoDeskuToppu-arm64 main.swift
-swiftc -O -target x86_64-apple-macos13 -o NekoDeskuToppu-x86_64 main.swift
+SOURCES=$(find Sources -name "*.swift" 2>/dev/null | sort | tr '\n' ' ')
+swiftc -O -target arm64-apple-macos13 -o NekoDeskuToppu-arm64 main.swift $SOURCES
+swiftc -O -target x86_64-apple-macos13 -o NekoDeskuToppu-x86_64 main.swift $SOURCES
 lipo -create NekoDeskuToppu-arm64 NekoDeskuToppu-x86_64 -output NekoDeskuToppu
 rm NekoDeskuToppu-arm64 NekoDeskuToppu-x86_64
 

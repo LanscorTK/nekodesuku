@@ -2,10 +2,15 @@
 set -e
 cd "$(dirname "$0")"
 
-# Build if needed
-if [ ! -f NekoDeskuToppu ] || [ main.swift -nt NekoDeskuToppu ]; then
-    bash build.sh
+# Build if needed (any .swift file newer than the binary)
+needs_build=0
+[ ! -f NekoDeskuToppu ] && needs_build=1
+if [ "$needs_build" = 0 ]; then
+    while IFS= read -r f; do
+        if [ "$f" -nt NekoDeskuToppu ]; then needs_build=1; break; fi
+    done < <(find main.swift Sources -name "*.swift" 2>/dev/null)
 fi
+[ "$needs_build" = 1 ] && bash build.sh
 
 # Auto-detect Kittens pack location
 PACK="${1:-}"
