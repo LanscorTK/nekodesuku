@@ -11,13 +11,15 @@ class MainPanelController {
     var rightHeaderLabel: NSTextField?
     var variantView: NSView?         // area below grid for variant buttons
     var statsView: NSView?           // stats display area
+    var relationshipView: RelationshipView?
     var selectedPetIndex: Int? = nil  // nil = add mode, Int = change breed mode
     var pendingFolder: String? = nil  // breed clicked that has variants
 
     let winW: CGFloat = 560
-    let winH: CGFloat = 500
+    let winH: CGFloat = 700
     let leftW: CGFloat = 255
     let topH: CGFloat = 290  // height of cat area (above settings)
+    let relH: CGFloat = 130  // vertical span of relationship section (excluding divider+header)
 
     func show() {
         if let w = window {
@@ -103,6 +105,24 @@ class MainPanelController {
         root.addSubview(sHeader)
 
         buildSettings(in: root, baseY: winH - topH - 65)
+
+        // === Horizontal divider above Relationship ===
+        let relDiv = NSBox(frame: NSRect(x: 10, y: relH + 8, width: winW - 20, height: 1))
+        relDiv.boxType = .separator
+        root.addSubview(relDiv)
+
+        // === Relationship section ===
+        let relHeader = NSTextField(labelWithString: "Relationship")
+        relHeader.font = NSFont.boldSystemFont(ofSize: 14)
+        relHeader.frame = NSRect(x: 16, y: relH - 16, width: 200, height: 20)
+        root.addSubview(relHeader)
+
+        let rel = RelationshipView(
+            frame: NSRect(x: 10, y: 10, width: winW - 20, height: relH - 30),
+            controller: self
+        )
+        root.addSubview(rel)
+        relationshipView = rel
 
         w.contentView = root
         w.makeKeyAndOrderFront(nil)
@@ -199,6 +219,7 @@ class MainPanelController {
 
         updateRightHeader()
         rebuildStats()
+        relationshipView?.refresh()
     }
 
     func rebuildStats() {

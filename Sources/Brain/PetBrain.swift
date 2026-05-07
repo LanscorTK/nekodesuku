@@ -115,10 +115,12 @@ class PetBrain {
         case .walkRight:
             facingRight = true
             stateDuration = .random(in: 3...7)
+            if ownerCtx.mood == .agitated { stateDuration *= 2 }
             setAnim("walk_r")
         case .walkLeft:
             facingRight = false
             stateDuration = .random(in: 3...7)
+            if ownerCtx.mood == .agitated { stateDuration *= 2 }
             setAnim("walk_l")
         case .sleeping:
             stateDuration = .random(in: 8...15)
