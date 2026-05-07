@@ -8,6 +8,7 @@ enum DefaultsKey {
     static let windowAwareness = "cfg_windowAwareness"
     static let autoSleep = "cfg_autoSleep"
     static let breakThresholdMinutes = "cfg_breakThresholdMinutes"
+    static let idleSwat = "cfg_idleSwat"
     static let savedPets = "savedPets"
 }
 
@@ -44,6 +45,9 @@ struct UserDefaultsStore {
 
     static func loadBreakThresholdMinutes() -> Int { int(DefaultsKey.breakThresholdMinutes, 60) }
     static func saveBreakThresholdMinutes(_ v: Int) { d.set(v, forKey: DefaultsKey.breakThresholdMinutes) }
+
+    static func loadIdleSwatMinutes() -> Double { double(DefaultsKey.idleSwat, 5.0) }
+    static func saveIdleSwatMinutes(_ v: Double) { d.set(v, forKey: DefaultsKey.idleSwat) }
 
     static func loadSavedPets() -> [[String: Any]]? {
         d.array(forKey: DefaultsKey.savedPets) as? [[String: Any]]

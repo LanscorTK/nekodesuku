@@ -2,12 +2,10 @@ import Foundation
 
 struct BehaviorPolicy {
     static func chooseAction(ctx: CatContext, perception p: Perception, bandit: Bandit) -> PetState {
-        // Hard overrides (most specific first).
+        // Hard overrides (most specific first). Idle-swat used to live here gated on
+        // concern; v1.4.1 moved it to PetBrain.pickNext as a time-only one-shot trigger
+        // backed by Config.idleSwatMinutes.
         if ctx.energy < 0.15 { return .sleeping }
-        if ctx.concern > 0.7 && p.idleTimeSeconds > 300 {
-            // Step 3/3 wires the swat tail off the followMouse end-state.
-            return .followMouse
-        }
         if ctx.mood == .agitated {
             return bandit.sample(eligible: agitatedActions)
         }

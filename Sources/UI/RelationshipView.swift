@@ -68,23 +68,47 @@ final class RelationshipView: NSView {
         let activeMin = Int(perception.continuousScreenTimeSeconds / 60)
         let breakMin = Config.breakThresholdMinutes
 
-        let info = NSTextField(labelWithString: "Screen time: \(activeMin)m  |  Break reminder at \(breakMin)m")
+        let info = NSTextField(labelWithString: "Screen time today: \(activeMin)m active")
         info.font = NSFont.systemFont(ofSize: 11)
         info.frame = NSRect(x: 8, y: 36, width: bounds.width - 16, height: 16)
         addSubview(info)
 
-        let slider = NSSlider(value: Double(breakMin), minValue: 1, maxValue: 180,
-                              target: self, action: #selector(breakChanged(_:)))
-        slider.frame = NSRect(x: 8, y: 8, width: bounds.width - 80, height: 20)
-        slider.toolTip = "After this many minutes of continuous screen time, the cat starts pacing to nudge you for a break."
-        addSubview(slider)
+        let lbl = NSTextField(labelWithString: "Break reminder:")
+        lbl.font = NSFont.systemFont(ofSize: 11)
+        lbl.frame = NSRect(x: 8, y: 10, width: 110, height: 18)
+        lbl.toolTip = "After this many minutes of continuous screen time, the cat becomes agitated. Set to 0 to disable."
+        addSubview(lbl)
 
-        let valLbl = NSTextField(labelWithString: "\(breakMin)m")
-        valLbl.frame = NSRect(x: bounds.width - 64, y: 8, width: 50, height: 18)
-        valLbl.font = NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .regular)
-        valLbl.alignment = .right
-        valLbl.tag = 9001
-        addSubview(valLbl)
+        let field = NSTextField(frame: NSRect(x: 124, y: 8, width: 50, height: 22))
+        field.font = NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .regular)
+        field.alignment = .right
+        let fmt = NumberFormatter()
+        fmt.minimum = 0
+        fmt.maximum = 180
+        fmt.allowsFloats = false
+        field.formatter = fmt
+        field.integerValue = breakMin
+        field.target = self
+        field.action = #selector(breakTyped(_:))
+        field.tag = 9001
+        addSubview(field)
+
+        let stepper = NSStepper(frame: NSRect(x: 178, y: 8, width: 19, height: 22))
+        stepper.minValue = 0
+        stepper.maxValue = 180
+        stepper.increment = 1
+        stepper.valueWraps = false
+        stepper.integerValue = breakMin
+        stepper.target = self
+        stepper.action = #selector(breakStepped(_:))
+        stepper.tag = 9002
+        addSubview(stepper)
+
+        let suffix = NSTextField(labelWithString: "min  (0 = disabled)")
+        suffix.font = NSFont.systemFont(ofSize: 11)
+        suffix.textColor = .secondaryLabelColor
+        suffix.frame = NSRect(x: 202, y: 10, width: bounds.width - 210, height: 18)
+        addSubview(suffix)
     }
 
     @objc private func forgetPressed() {
@@ -96,13 +120,20 @@ final class RelationshipView: NSView {
         refresh()
     }
 
-    @objc private func breakChanged(_ sender: NSSlider) {
-        let v = Int(sender.doubleValue.rounded())
+    @objc private func breakStepped(_ sender: NSStepper) {
+        applyBreakThreshold(sender.integerValue)
+    }
+
+    @objc private func breakTyped(_ sender: NSTextField) {
+        applyBreakThreshold(sender.integerValue)
+    }
+
+    private func applyBreakThreshold(_ raw: Int) {
+        let v = max(0, min(180, raw))
         Config.breakThresholdMinutes = v
         Config.save()
-        if let lbl = subviews.first(where: { $0.tag == 9001 }) as? NSTextField {
-            lbl.stringValue = "\(v)m"
-        }
+        (viewWithTag(9001) as? NSTextField)?.integerValue = v
+        (viewWithTag(9002) as? NSStepper)?.integerValue = v
     }
 
     private func bondLevel(stats: PetStats) -> Int {

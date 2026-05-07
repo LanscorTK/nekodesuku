@@ -30,11 +30,15 @@ func updateContext(_ ctx: inout CatContext, perception p: Perception, currentSta
     // Boredom rises slowly always; falls only via reward signal at user interaction.
     let boredomDelta = 0.0008
 
-    // Concern rises with screen time and with user idleness past 5min; baseline decays.
-    let breakThresholdSec = Double(UserDefaultsStore.loadBreakThresholdMinutes()) * 60
+    // Concern is purely the screen-time intervention signal. Idle-swat used to share
+    // this channel but is now time-only triggered (see PetBrain.pickNext); the old
+    // idleTime → concern bump was orphaned and removed in v1.4.1.
+    let breakThresholdMin = UserDefaultsStore.loadBreakThresholdMinutes()
     var concernDelta = -0.002
-    if p.continuousScreenTimeSeconds > breakThresholdSec * 0.8 { concernDelta += 0.01 }
-    if p.idleTimeSeconds > 300 { concernDelta += 0.005 }
+    if breakThresholdMin > 0 {
+        let breakThresholdSec = Double(breakThresholdMin) * 60
+        if p.continuousScreenTimeSeconds > breakThresholdSec * 0.8 { concernDelta += 0.01 }
+    }
 
     ctx.energy = clamp01(ctx.energy + dt * energyDelta)
     ctx.boredom = clamp01(ctx.boredom + dt * boredomDelta)

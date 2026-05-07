@@ -34,6 +34,7 @@ class PetBrain {
     var bandit: Bandit = Bandit()
     var lastChosenAction: PetState = .sitIdle
     var actionStartTime: TimeInterval = 0
+    private var idleSwatFiredThisSession: Bool = false
 
     // Mouse follow
     var mousePos: NSPoint = .zero
@@ -328,9 +329,25 @@ class PetBrain {
 
     private func pickNext() {
         let p = PerceptionLayer.shared.current()
+        let now = ProcessInfo.processInfo.systemUptime
+
+        // Re-arm idle-swat once the user comes back to the keyboard.
+        if p.idleTimeSeconds < 30 { idleSwatFiredThisSession = false }
+
+        // Idle-swat: time-only trigger, fires exactly once per idle session.
+        if Config.idleSwatMinutes > 0
+            && p.idleTimeSeconds > Config.idleSwatMinutes * 60
+            && !idleSwatFiredThisSession {
+            idleSwatFiredThisSession = true
+            lastChosenAction = .followMouse
+            actionStartTime = now
+            enter(.followMouse)
+            return
+        }
+
         let action = BehaviorPolicy.chooseAction(ctx: ownerCtx, perception: p, bandit: bandit)
         lastChosenAction = action
-        actionStartTime = ProcessInfo.processInfo.systemUptime
+        actionStartTime = now
         enter(action)
     }
 

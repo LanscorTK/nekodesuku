@@ -12,6 +12,7 @@ struct Config {
     static var activityLevel: Double = 1.0  // 0.0=calm, 1.0=normal, 2.0=hyperactive
     static var windowAwareness: Bool = true
     static var autoSleepMinutes: Double = 5.0  // 0 = disabled
+    static var idleSwatMinutes: Double = 5.0   // 0 = disabled
     static var breakThresholdMinutes: Int = 60
     static var windowSize: CGFloat { 16.0 * scale }
 
@@ -36,6 +37,7 @@ struct Config {
         UserDefaultsStore.saveActivityLevel(activityLevel)
         UserDefaultsStore.saveWindowAwareness(windowAwareness)
         UserDefaultsStore.saveAutoSleepMinutes(autoSleepMinutes)
+        UserDefaultsStore.saveIdleSwatMinutes(idleSwatMinutes)
         UserDefaultsStore.saveBreakThresholdMinutes(breakThresholdMinutes)
     }
 
@@ -46,6 +48,7 @@ struct Config {
         activityLevel = UserDefaultsStore.loadActivityLevel()
         windowAwareness = UserDefaultsStore.loadWindowAwareness()
         autoSleepMinutes = UserDefaultsStore.loadAutoSleepMinutes()
+        idleSwatMinutes = UserDefaultsStore.loadIdleSwatMinutes()
         breakThresholdMinutes = UserDefaultsStore.loadBreakThresholdMinutes()
     }
 }

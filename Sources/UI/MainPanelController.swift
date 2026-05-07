@@ -16,7 +16,7 @@ class MainPanelController {
     var pendingFolder: String? = nil  // breed clicked that has variants
 
     let winW: CGFloat = 560
-    let winH: CGFloat = 700
+    let winH: CGFloat = 730
     let leftW: CGFloat = 255
     let topH: CGFloat = 290  // height of cat area (above settings)
     let relH: CGFloat = 130  // vertical span of relationship section (excluding divider+header)
@@ -370,6 +370,46 @@ class MainPanelController {
         root.addSubview(sleepVal)
         y -= 28
 
+        // Idle-swat stepper (v1.4.1). Stepper paired with a numeric text field; mirrors
+        // auto-sleep semantics (0 = disabled).
+        let swatLbl = NSTextField(labelWithString: "Idle Swat")
+        swatLbl.frame = NSRect(x: 20, y: y, width: 65, height: 20)
+        swatLbl.font = NSFont.systemFont(ofSize: 11)
+        swatLbl.toolTip = "Minutes of no input before the cat walks to the cursor and swats it (0 = disabled)"
+        root.addSubview(swatLbl)
+
+        let swatField = NSTextField(frame: NSRect(x: 90, y: y, width: 50, height: 22))
+        swatField.font = NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .regular)
+        swatField.alignment = .right
+        let swatFmt = NumberFormatter()
+        swatFmt.minimum = 0
+        swatFmt.maximum = 30
+        swatFmt.allowsFloats = false
+        swatField.formatter = swatFmt
+        swatField.integerValue = Int(Config.idleSwatMinutes)
+        swatField.target = self
+        swatField.action = #selector(idleSwatTyped(_:))
+        swatField.tag = 7001
+        root.addSubview(swatField)
+
+        let swatStepper = NSStepper(frame: NSRect(x: 144, y: y, width: 19, height: 22))
+        swatStepper.minValue = 0
+        swatStepper.maxValue = 30
+        swatStepper.increment = 1
+        swatStepper.valueWraps = false
+        swatStepper.integerValue = Int(Config.idleSwatMinutes)
+        swatStepper.target = self
+        swatStepper.action = #selector(idleSwatStepped(_:))
+        swatStepper.tag = 7002
+        root.addSubview(swatStepper)
+
+        let swatSuffix = NSTextField(labelWithString: "min")
+        swatSuffix.frame = NSRect(x: 168, y: y, width: 30, height: 20)
+        swatSuffix.font = NSFont.systemFont(ofSize: 11)
+        swatSuffix.textColor = .secondaryLabelColor
+        root.addSubview(swatSuffix)
+        y -= 28
+
         let winCheck = NSButton(checkboxWithTitle: "Window Awareness", target: self, action: #selector(windowAwarenessChanged(_:)))
         winCheck.frame = NSRect(x: 20, y: y, width: 200, height: 20)
         winCheck.state = Config.windowAwareness ? .on : .off
@@ -584,6 +624,24 @@ class MainPanelController {
         Config.save()
     }
 
+    @objc func idleSwatStepped(_ sender: NSStepper) {
+        applyIdleSwat(sender.integerValue)
+    }
+
+    @objc func idleSwatTyped(_ sender: NSTextField) {
+        applyIdleSwat(sender.integerValue)
+    }
+
+    private func applyIdleSwat(_ raw: Int) {
+        let v = max(0, min(30, raw))
+        Config.idleSwatMinutes = Double(v)
+        Config.save()
+        if let root = window?.contentView {
+            (root.viewWithTag(7001) as? NSTextField)?.integerValue = v
+            (root.viewWithTag(7002) as? NSStepper)?.integerValue = v
+        }
+    }
+
     @objc func resetDefaults(_ sender: Any) {
         Config.scale = 6.0
         Config.walkSpeed = 30
@@ -591,6 +649,8 @@ class MainPanelController {
         Config.activityLevel = 1.0
         Config.windowAwareness = true
         Config.autoSleepMinutes = 5.0
+        Config.idleSwatMinutes = 5.0
+        Config.breakThresholdMinutes = 60
         Config.save()
         appDelegate?.resizeAllPets()
         window?.close()
