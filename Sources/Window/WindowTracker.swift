@@ -18,7 +18,14 @@ class WindowTracker {
             [.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID
         ) as? [[String: Any]] else { return }
 
-        let screenH = NSScreen.main?.frame.height ?? 0
+        // CGWindow returns y in coordinates anchored to the *primary* screen's
+        // top-left (the screen with NSScreen.frame.origin == .zero). Using
+        // NSScreen.main here would drift on multi-monitor setups whenever
+        // keyboard focus is on a non-primary display.
+        let primary = NSScreen.screens.first(where: { $0.frame.origin == .zero })
+            ?? NSScreen.screens.first
+            ?? NSScreen.main
+        let screenH = primary?.frame.height ?? 0
 
         windowRects = infoList.compactMap { info -> NSRect? in
             guard let bounds = info[kCGWindowBounds as String] as? [String: Any],
