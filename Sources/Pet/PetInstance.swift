@@ -88,14 +88,21 @@ class PetInstance {
 
         ctxAccum += dt
         if ctxAccum >= 1.0 {
-            updateContext(&ctx, perception: PerceptionLayer.shared.current(), dt: ctxAccum)
+            updateContext(&ctx,
+                          perception: PerceptionLayer.shared.current(),
+                          currentState: brain.state,
+                          dt: ctxAccum)
             ctxAccum = 0
         }
+        brain.ownerCtx = ctx
 
-        // Detect long press → petting
+        // Detect long press → petting (rewards the bandit when the user holds within 5s)
         if view.isDragging && !view.wasDragged {
             if case .petting = brain.state { }
             else if (now - view.mouseDownTime) > 1.0 {
+                if (now - brain.actionStartTime) <= 5.0 {
+                    brain.recordReward(+1.5)
+                }
                 brain.triggerPetting()
             }
         }

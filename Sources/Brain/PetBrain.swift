@@ -27,6 +27,14 @@ class PetBrain {
     var walkSpeed: CGFloat { Config.walkSpeed }
     var transitionDelay: TimeInterval = 0
 
+    // Policy + bandit (commit 2/3): chooseAction reads ownerCtx; recordReward attributes
+    // to lastChosenAction (set by pickNext, not by every enter() — chained transitions
+    // like sleeping → yawning still credit the bandit's original sleeping pick).
+    var ownerCtx: CatContext = .fresh()
+    var bandit: Bandit = Bandit()
+    var lastChosenAction: PetState = .sitIdle
+    var actionStartTime: TimeInterval = 0
+
     // Mouse follow
     var mousePos: NSPoint = .zero
     var petPos: NSPoint = .zero
@@ -317,26 +325,18 @@ class PetBrain {
     }
 
     private func pickNext() {
-        let a = Config.activityLevel
-        let r = Double.random(in: 0...1)
-        // Active behaviors scale with activityLevel; calm behaviors fill the rest
-        let followChance = 0.20 * a
-        let zoomChance   = 0.05 * a
-        let chaseChance  = 0.05 * a
-        let stretchChance = 0.05 * a
-        var t = 0.0
-        t += followChance;  if r < t { enter(.followMouse); return }
-        t += zoomChance;    if r < t { enter(.zoomies); return }
-        t += chaseChance;   if r < t { enter(.chaseBug); return }
-        t += stretchChance; if r < t { enter(.stretch); return }
-        // Remaining probability spread across calm behaviors
-        let calm = 1.0 - t
-        t += calm * 0.23; if r < t { enter(.walkRight); return }
-        t += calm * 0.23; if r < t { enter(.walkLeft); return }
-        t += calm * 0.15; if r < t { enter(.sleeping); return }
-        t += calm * 0.13; if r < t { enter(.meowing); return }
-        t += calm * 0.10; if r < t { enter(.yawning); return }
-        t += calm * 0.10; if r < t { enter(.washing); return }
-        enter(.scratching)
+        let p = PerceptionLayer.shared.current()
+        let action = BehaviorPolicy.chooseAction(ctx: ownerCtx, perception: p, bandit: bandit)
+        lastChosenAction = action
+        actionStartTime = ProcessInfo.processInfo.systemUptime
+        enter(action)
+    }
+
+    /// Attribute a reward to whichever action the policy most recently chose. Reactive
+    /// states (clickReact, petting) and environment-triggered states are not bandit
+    /// targets, so they're skipped — the bandit only learns from policy-selected actions.
+    func recordReward(_ r: Double) {
+        guard BehaviorPolicy.banditEligible.contains(lastChosenAction) else { return }
+        bandit.record(action: lastChosenAction, reward: r)
     }
 }

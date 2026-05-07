@@ -388,7 +388,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     func savePets() {
         let data: [[String: Any]] = pets.map {
             ["folder": $0.catFolder, "variant": $0.catVariant, "name": $0.petName,
-             "stats": $0.stats.toDict()]
+             "stats": $0.stats.toDict(),
+             "bandit": $0.brain.bandit.toDict()]
         }
         UserDefaultsStore.saveSavedPets(data)
     }
@@ -402,6 +403,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 addPet(catFolder: folder, catVariant: variant, petName: name)
                 if let statsDict = entry["stats"] as? [String: Any] {
                     pets.last?.stats = PetStats.from(statsDict)
+                }
+                if let banditDict = entry["bandit"] as? [String: Any],
+                   let restored = Bandit(dict: banditDict) {
+                    pets.last?.brain.bandit = restored
                 }
             }
         }

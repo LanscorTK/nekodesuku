@@ -67,8 +67,12 @@ class PetView: NSView {
             if case .petting = instance?.brain.state {
                 instance?.brain.stopPetting()
                 instance?.stats.pettings += 1
-            } else {
-                instance?.brain.triggerClickReact()
+            } else if let brain = instance?.brain {
+                let now = ProcessInfo.processInfo.systemUptime
+                if (now - brain.actionStartTime) <= 3.0 {
+                    brain.recordReward(+1.0)
+                }
+                brain.triggerClickReact()
                 instance?.stats.clicks += 1
             }
         }
@@ -77,6 +81,7 @@ class PetView: NSView {
 
     override func rightMouseDown(with e: NSEvent) {
         guard let inst = instance else { return }
+        inst.brain.recordReward(-0.3)
         (NSApp.delegate as? AppDelegate)?.showPetMenu(for: inst, event: e)
     }
 }

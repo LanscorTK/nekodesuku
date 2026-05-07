@@ -17,16 +17,22 @@ struct CatContext {
 
 private func clamp01(_ x: Double) -> Double { max(0, min(1, x)) }
 
-func updateContext(_ ctx: inout CatContext, perception p: Perception, dt: TimeInterval) {
-    // Energy drains slowly while active, recovers when user idle (cat naps too).
-    let energyDelta = p.idleTimeSeconds > 60 ? 0.005 : -0.001
+func updateContext(_ ctx: inout CatContext, perception p: Perception, currentState: PetState, dt: TimeInterval) {
+    // Energy: recovers fastest when the cat itself is resting, slower when user is idle,
+    // drains slowly otherwise. Without the resting branch a cat with low energy would
+    // sleep continuously without recovering.
+    let resting = (currentState == .sleeping || currentState == .yawning)
+    let energyDelta: Double
+    if resting              { energyDelta =  0.008 }
+    else if p.idleTimeSeconds > 60 { energyDelta =  0.003 }
+    else                    { energyDelta = -0.001 }
 
-    // Boredom rises slowly always; falls only on user interaction (handled at reward callsite).
+    // Boredom rises slowly always; falls only via reward signal at user interaction.
     let boredomDelta = 0.0008
 
-    // Concern rises with screen time (user might need a break) and with user idleness past 5min.
+    // Concern rises with screen time and with user idleness past 5min; baseline decays.
     let breakThresholdSec = Double(UserDefaultsStore.loadBreakThresholdMinutes()) * 60
-    var concernDelta = -0.002  // baseline decay
+    var concernDelta = -0.002
     if p.continuousScreenTimeSeconds > breakThresholdSec * 0.8 { concernDelta += 0.01 }
     if p.idleTimeSeconds > 300 { concernDelta += 0.005 }
 
