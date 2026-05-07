@@ -43,6 +43,8 @@ class PetInstance {
     var nameWindow: NSWindow?
     var stats = PetStats()
     var prevState: PetState = .sitIdle
+    var ctx: CatContext = .fresh()
+    private var ctxAccum: TimeInterval = 0
 
     var catPath: String {
         if catVariant.isEmpty { return "\(Config.packPath)/\(catFolder)" }
@@ -83,6 +85,12 @@ class PetInstance {
         let now = ProcessInfo.processInfo.systemUptime
         let dt = now - lastTick
         lastTick = now
+
+        ctxAccum += dt
+        if ctxAccum >= 1.0 {
+            updateContext(&ctx, perception: PerceptionLayer.shared.current(), dt: ctxAccum)
+            ctxAccum = 0
+        }
 
         // Detect long press → petting
         if view.isDragging && !view.wasDragged {

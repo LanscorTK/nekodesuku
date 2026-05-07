@@ -29,28 +29,20 @@ struct Config {
     }
 
     static func save() {
-        let d = UserDefaults.standard
-        d.set(Double(scale), forKey: "cfg_scale")
-        d.set(Double(walkSpeed), forKey: "cfg_walkSpeed")
-        d.set(Double(gravitySpeed), forKey: "cfg_gravity")
-        d.set(activityLevel, forKey: "cfg_activity")
-        d.set(windowAwareness, forKey: "cfg_windowAwareness")
-        d.set(autoSleepMinutes, forKey: "cfg_autoSleep")
+        UserDefaultsStore.saveScale(scale)
+        UserDefaultsStore.saveWalkSpeed(walkSpeed)
+        UserDefaultsStore.saveGravitySpeed(gravitySpeed)
+        UserDefaultsStore.saveActivityLevel(activityLevel)
+        UserDefaultsStore.saveWindowAwareness(windowAwareness)
+        UserDefaultsStore.saveAutoSleepMinutes(autoSleepMinutes)
     }
 
     static func restore() {
-        let d = UserDefaults.standard
-        if d.object(forKey: "cfg_scale") != nil {
-            scale = CGFloat(d.double(forKey: "cfg_scale"))
-            walkSpeed = CGFloat(d.double(forKey: "cfg_walkSpeed"))
-            gravitySpeed = CGFloat(d.double(forKey: "cfg_gravity"))
-            activityLevel = d.double(forKey: "cfg_activity")
-            if d.object(forKey: "cfg_windowAwareness") != nil {
-                windowAwareness = d.bool(forKey: "cfg_windowAwareness")
-            }
-            if d.object(forKey: "cfg_autoSleep") != nil {
-                autoSleepMinutes = d.double(forKey: "cfg_autoSleep")
-            }
-        }
+        scale = UserDefaultsStore.loadScale()
+        walkSpeed = UserDefaultsStore.loadWalkSpeed()
+        gravitySpeed = UserDefaultsStore.loadGravitySpeed()
+        activityLevel = UserDefaultsStore.loadActivityLevel()
+        windowAwareness = UserDefaultsStore.loadWindowAwareness()
+        autoSleepMinutes = UserDefaultsStore.loadAutoSleepMinutes()
     }
 }

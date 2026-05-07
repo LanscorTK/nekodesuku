@@ -23,7 +23,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         Config.restore()
-        // Shorter tooltip delay
         UserDefaults.standard.set(0.3, forKey: "NSInitialToolTipDelay")
         panelController.appDelegate = self
         restorePets()
@@ -42,6 +41,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func tick() {
+        PerceptionLayer.shared.update()
         windowTracker.update()
 
         // Auto-sleep: if no interaction for N minutes, all cats sleep
@@ -390,11 +390,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             ["folder": $0.catFolder, "variant": $0.catVariant, "name": $0.petName,
              "stats": $0.stats.toDict()]
         }
-        UserDefaults.standard.set(data, forKey: "savedPets")
+        UserDefaultsStore.saveSavedPets(data)
     }
 
     func restorePets() {
-        if let saved = UserDefaults.standard.array(forKey: "savedPets") as? [[String: Any]], !saved.isEmpty {
+        if let saved = UserDefaultsStore.loadSavedPets(), !saved.isEmpty {
             for entry in saved {
                 let folder = entry["folder"] as? String ?? "Cat 1"
                 let variant = entry["variant"] as? String ?? folder
